@@ -1,0 +1,21 @@
+Description: Add host name to default MAILFROM
+ The host on which the error occurred is mentioned in the subject and also in
+ the message body, but some may find it useful in the From address, as well.
+Author: Felix Lechner <felix.lechner@lease-up.com>
+Bug-Debian: https://bugs.debian.org/1006464
+Forwarded: no
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/Monitor.c
++++ b/Monitor.c
+@@ -440,8 +440,8 @@ static void alert(char *event, char *dev
+ 			if (info->mailfrom)
+ 				fprintf(mp, "From: %s\n", info->mailfrom);
+ 			else
+-				fprintf(mp, "From: %s monitoring <root>\n",
+-					Name);
++				fprintf(mp, "From: %s monitoring <root@%s>\n",
++					Name, hname);
+ 			fprintf(mp, "To: %s\n", info->mailaddr);
+ 			fprintf(mp, "Subject: %s event on %s:%s\n\n",
+ 				event, dev, hname);
