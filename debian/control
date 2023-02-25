@@ -25,12 +25,12 @@ Recommends:
  ${mta:Recommends},
 Suggests:
  ${mta:Suggests},
-Description: Tool to administer Linux MD arrays (software RAID)
- The mdadm utility can be used to create, manage, and monitor MD
- (multi-disk) arrays for software RAID or multipath I/O.
+Description: tool for managing Linux MD devices (software RAID)
+ The mdadm tool is used to create, manage, and monitor Linux MD (software
+ RAID) devices.
  .
- This package automatically configures mdadm to assemble arrays during the
- system startup process. If not needed, this functionality can be disabled.
+ This package configures mdadm to by default assemble arrays automatically
+ during the system startup process.
 
 Package: mdadm-udeb
 Section: debian-installer
@@ -39,8 +39,8 @@ Package-Type: udeb
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
-Description: Tool to administer Linux MD arrays (software RAID)
- The mdadm utility can be used to create, manage, and monitor MD
- (multi-disk) arrays for software RAID or multipath I/O.
+Description: tool for managing Linux md devices (software RAID arrays)
+ The mdadm tool is used to create, manage, and monitor Linux MD (software
+ RAID) devices.
  .
  This is a minimal package used by the debian-installer.
