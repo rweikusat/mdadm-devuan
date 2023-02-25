@@ -3,6 +3,6 @@ debian/0002-mdmonitor-service-simplify.patch
 debian/0003-host-name-in-default-mailfrom.patch
 debian/0004-exit-gracefully-when-md-device-not-found.patch
 debian/0005-sha1-includes.patch
-readlink-path.patch
+debian/0006-readlink-path.patch
 debian-no-Werror.diff
 test-installed.patch
