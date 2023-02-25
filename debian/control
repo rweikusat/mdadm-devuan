@@ -21,7 +21,7 @@ Depends:
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
- kmod | module-init-tools,
+ kmod,
  ${mta:Recommends},
 Suggests:
  ${mta:Suggests},
