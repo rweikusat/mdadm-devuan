@@ -4,5 +4,5 @@ lib/
 misc/mdcheck usr/share/mdadm/
 
 debian/local/bin/* usr/share/mdadm
-debian/initramfs/* usr/share/initramfs-tools/
+debian/local/initramfs-tools/* usr/share/initramfs-tools/scripts
 debian/bug-submission/script usr/share/bug/mdadm/
