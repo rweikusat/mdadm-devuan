@@ -1,8 +1,7 @@
-# Debconf translations for mdadm.
-# Copyright (C) 2006 THE mdadm'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the sysvinit package.
-# Felipe Augusto van de Wiel (faw) <faw@cathedrallabs.org>, 2006.
-# Adriano Rafael Gomes <adrianorg@debian.org>, 2020.
+# Brazilian Portuguese debconf translation of mdadm
+# Copyright (C) Felipe Augusto van de Wiel (faw) <faw@cathedrallabs.org>
+# Copyright (C) Adriano Rafael Gomes <adrianorg@debian.org>
+# This file is distributed under the same license as the mdadm package.
 #
 msgid ""
 msgstr ""

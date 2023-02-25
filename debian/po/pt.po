@@ -1,8 +1,7 @@
-# Portuguese translation for mdadm debconf messages.
+# Portuguese debconf translation of mdadm
 # Copyright (C) 2008 Pedro Ribeiro <p.m42.ribeiro@gmail.com>
+# Copyright (C) 2020 Miguel Figueiredo <elmig@debianpt.org>
 # This file is distributed under the same license as the mdadm package.
-# Pedro Ribeiro <p.m42.ribeiro@gmail.com>, 2008
-# Miguel Figueiredo <elmig@debianpt.org>, 2020
 #
 msgid ""
 msgstr ""
