@@ -406,12 +406,18 @@ static void examine_super1(struct supertype *st, char *homehost)
 
 	st->ss->getinfo_super(st, &info, NULL);
 	if (info.space_after != 1 &&
-	    !(__le32_to_cpu(sb->feature_map) & MD_FEATURE_NEW_OFFSET))
-		printf("   Unused Space : before=%llu sectors, after=%llu sectors\n",
-		       info.space_before, info.space_after);
-
-	printf("          State : %s\n",
-	       (__le64_to_cpu(sb->resync_offset)+1)? "active":"clean");
+	    !(__le32_to_cpu(sb->feature_map) & MD_FEATURE_NEW_OFFSET)) {
+		printf("   Unused Space : before=%llu sectors, ",
+		       info.space_before);
+		if (info.space_after < INT64_MAX)
+			printf("after=%llu sectors\n", info.space_after);
+		else
+			printf("after=-%llu sectors DEVICE TOO SMALL\n",
+			       UINT64_MAX - info.space_after);
+	}
+	printf("          State : %s%s\n",
+	       (__le64_to_cpu(sb->resync_offset)+1) ? "active":"clean",
+	       (info.space_after > INT64_MAX)       ? " TRUNCATED DEVICE" : "");
 	printf("    Device UUID : ");
 	for (i=0; i<16; i++) {
 		if ((i&3)==0 && i != 0)
@@ -671,7 +677,7 @@ static void export_examine_super1(struct supertype *st)
 	int len = 32;
 	int layout;
 
-	printf("MD_LEVEL=%s\n", map_num(pers, __le32_to_cpu(sb->level)));
+	printf("MD_LEVEL=%s\n", map_num_s(pers, __le32_to_cpu(sb->level)));
 	printf("MD_DEVICES=%d\n", __le32_to_cpu(sb->raid_disks));
 	for (i = 0; i < 32; i++)
 		if (sb->set_name[i] == '\n' || sb->set_name[i] == '\0') {
@@ -1202,7 +1208,7 @@ static struct mdinfo *container_content1(struct supertype *st, char *subarray)
 }
 
 static int update_super1(struct supertype *st, struct mdinfo *info,
-			 char *update, char *devname, int verbose,
+			 enum update_opt update, char *devname, int verbose,
 			 int uuid_set, char *homehost)
 {
 	/* NOTE: for 'assemble' and 'force' we need to return non-zero
@@ -1213,29 +1219,53 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 	struct mdp_superblock_1 *sb = st->sb;
 	bitmap_super_t *bms = (bitmap_super_t*)(((char*)sb) + MAX_SB_SIZE);
 
-	if (strcmp(update, "homehost") == 0 &&
-	    homehost) {
-		/* Note that 'homehost' is special as it is really
+	if (update == UOPT_HOMEHOST && homehost) {
+		/*
+		 * Note that 'homehost' is special as it is really
 		 * a "name" update.
 		 */
 		char *c;
-		update = "name";
+		update = UOPT_NAME;
 		c = strchr(sb->set_name, ':');
 		if (c)
-			strncpy(info->name, c+1, 31 - (c-sb->set_name));
+			snprintf(info->name, sizeof(info->name), "%s", c+1);
 		else
-			strncpy(info->name, sb->set_name, 32);
-		info->name[32] = 0;
+			snprintf(info->name, sizeof(info->name), "%s", sb->set_name);
 	}
 
-	if (strcmp(update, "force-one")==0) {
+	switch (update) {
+	case UOPT_NAME: {
+		int namelen;
+
+		if (!info->name[0])
+			snprintf(info->name, sizeof(info->name), "%d", info->array.md_minor);
+		memset(sb->set_name, 0, sizeof(sb->set_name));
+
+		namelen = strnlen(homehost, MD_NAME_MAX) + 1 + strnlen(info->name, MD_NAME_MAX);
+		if (homehost &&
+		    strchr(info->name, ':') == NULL &&
+		    namelen < MD_NAME_MAX) {
+			strcpy(sb->set_name, homehost);
+			strcat(sb->set_name, ":");
+			strcat(sb->set_name, info->name);
+		} else {
+			namelen = min((int)strnlen(info->name, MD_NAME_MAX),
+				      (int)sizeof(sb->set_name) - 1);
+			memcpy(sb->set_name, info->name, namelen);
+			memset(&sb->set_name[namelen], '\0',
+			       sizeof(sb->set_name) - namelen);
+		}
+		break;
+	}
+	case UOPT_SPEC_FORCE_ONE:
 		/* Not enough devices for a working array,
 		 * so bring this one up-to-date
 		 */
 		if (sb->events != __cpu_to_le64(info->events))
 			rv = 1;
 		sb->events = __cpu_to_le64(info->events);
-	} else if (strcmp(update, "force-array")==0) {
+		break;
+	case UOPT_SPEC_FORCE_ARRAY:
 		/* Degraded array and 'force' requests to
 		 * maybe need to mark it 'clean'.
 		 */
@@ -1248,7 +1278,8 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 				rv = 1;
 			sb->resync_offset = MaxSector;
 		}
-	} else if (strcmp(update, "assemble")==0) {
+		break;
+	case UOPT_SPEC_ASSEMBLE: {
 		int d = info->disk.number;
 		int want;
 		if (info->disk.state & (1<<MD_DISK_ACTIVE))
@@ -1281,7 +1312,9 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 				__cpu_to_le64(info->reshape_progress);
 			rv = 1;
 		}
-	} else if (strcmp(update, "linear-grow-new") == 0) {
+		break;
+	}
+	case UOPT_SPEC_LINEAR_GROW_NEW: {
 		int i;
 		int fd;
 		int max = __le32_to_cpu(sb->max_dev);
@@ -1324,7 +1357,9 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 					ds - __le64_to_cpu(sb->data_offset));
 			}
 		}
-	} else if (strcmp(update, "linear-grow-update") == 0) {
+		break;
+	}
+	case UOPT_SPEC_LINEAR_GROW_UPDATE: {
 		int max = __le32_to_cpu(sb->max_dev);
 		int i = info->disk.number;
 		if (max > MAX_DEVS || i > MAX_DEVS)
@@ -1336,19 +1371,20 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 		sb->raid_disks = __cpu_to_le32(info->array.raid_disks);
 		sb->dev_roles[info->disk.number] =
 			__cpu_to_le16(info->disk.raid_disk);
-	} else if (strcmp(update, "resync") == 0) {
-		/* make sure resync happens */
-		sb->resync_offset = 0ULL;
-	} else if (strcmp(update, "uuid") == 0) {
+		break;
+	}
+	case UOPT_UUID:
 		copy_uuid(sb->set_uuid, info->uuid, super1.swapuuid);
 
 		if (__le32_to_cpu(sb->feature_map) & MD_FEATURE_BITMAP_OFFSET)
 			memcpy(bms->uuid, sb->set_uuid, 16);
-	} else if (strcmp(update, "no-bitmap") == 0) {
+		break;
+	case UOPT_NO_BITMAP:
 		sb->feature_map &= ~__cpu_to_le32(MD_FEATURE_BITMAP_OFFSET);
 		if (bms->version == BITMAP_MAJOR_CLUSTERED && !IsBitmapDirty(devname))
 			sb->resync_offset = MaxSector;
-	} else if (strcmp(update, "bbl") == 0) {
+		break;
+	case UOPT_BBL: {
 		/* only possible if there is room after the bitmap, or if
 		 * there is no bitmap
 		 */
@@ -1377,14 +1413,12 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 				bb_offset = bitmap_offset + bm_sectors;
 			while (bb_offset < (long)sb_offset + 8 + 32*2 &&
 			       bb_offset + 8+8 <= (long)data_offset)
-				/* too close to bitmap, and room to grow */
 				bb_offset += 8;
 			if (bb_offset + 8 <= (long)data_offset) {
 				sb->bblog_size = __cpu_to_le16(8);
 				sb->bblog_offset = __cpu_to_le32(bb_offset);
 			}
 		} else {
-			/* 1.0 - Put bbl just before super block */
 			if (bm_sectors && bitmap_offset < 0)
 				space = -bitmap_offset - bm_sectors;
 			else
@@ -1395,7 +1429,9 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 				sb->bblog_offset = __cpu_to_le32((unsigned)-8);
 			}
 		}
-	} else if (strcmp(update, "no-bbl") == 0) {
+		break;
+	}
+	case UOPT_NO_BBL:
 		if (sb->feature_map & __cpu_to_le32(MD_FEATURE_BAD_BLOCKS))
 			pr_err("Cannot remove active bbl from %s\n",devname);
 		else {
@@ -1403,12 +1439,14 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 			sb->bblog_shift = 0;
 			sb->bblog_offset = 0;
 		}
-	} else if (strcmp(update, "force-no-bbl") == 0) {
+		break;
+	case UOPT_FORCE_NO_BBL:
 		sb->feature_map &= ~ __cpu_to_le32(MD_FEATURE_BAD_BLOCKS);
 		sb->bblog_size = 0;
 		sb->bblog_shift = 0;
 		sb->bblog_offset = 0;
-	} else if (strcmp(update, "ppl") == 0) {
+		break;
+	case UOPT_PPL: {
 		unsigned long long sb_offset = __le64_to_cpu(sb->super_offset);
 		unsigned long long data_offset = __le64_to_cpu(sb->data_offset);
 		unsigned long long data_size = __le64_to_cpu(sb->data_size);
@@ -1458,37 +1496,26 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 		sb->ppl.offset = __cpu_to_le16(offset);
 		sb->ppl.size = __cpu_to_le16(space);
 		sb->feature_map |= __cpu_to_le32(MD_FEATURE_PPL);
-	} else if (strcmp(update, "no-ppl") == 0) {
+		break;
+	}
+	case UOPT_NO_PPL:
 		sb->feature_map &= ~__cpu_to_le32(MD_FEATURE_PPL |
 						   MD_FEATURE_MUTLIPLE_PPLS);
-	} else if (strcmp(update, "name") == 0) {
-		if (info->name[0] == 0)
-			sprintf(info->name, "%d", info->array.md_minor);
-		memset(sb->set_name, 0, sizeof(sb->set_name));
-		if (homehost &&
-		    strchr(info->name, ':') == NULL &&
-		    strlen(homehost)+1+strlen(info->name) < 32) {
-			strcpy(sb->set_name, homehost);
-			strcat(sb->set_name, ":");
-			strcat(sb->set_name, info->name);
-		} else {
-			int namelen;
-
-			namelen = min((int)strlen(info->name),
-				      (int)sizeof(sb->set_name) - 1);
-			memcpy(sb->set_name, info->name, namelen);
-			memset(&sb->set_name[namelen], '\0',
-			       sizeof(sb->set_name) - namelen);
-		}
-	} else if (strcmp(update, "devicesize") == 0 &&
-		   __le64_to_cpu(sb->super_offset) <
-		   __le64_to_cpu(sb->data_offset)) {
-		/* set data_size to device size less data_offset */
+		break;
+	case UOPT_DEVICESIZE:
+		if (__le64_to_cpu(sb->super_offset) >=
+		    __le64_to_cpu(sb->data_offset))
+			break;
+		/*
+		 * set data_size to device size less data_offset
+		 */
 		struct misc_dev_info *misc = (struct misc_dev_info*)
 			(st->sb + MAX_SB_SIZE + BM_SUPER_SIZE);
 		sb->data_size = __cpu_to_le64(
 			misc->device_size - __le64_to_cpu(sb->data_offset));
-	} else if (strncmp(update, "revert-reshape", 14) == 0) {
+		break;
+	case UOPT_SPEC_REVERT_RESHAPE_NOBACKUP:
+	case UOPT_REVERT_RESHAPE:
 		rv = -2;
 		if (!(sb->feature_map &
 		      __cpu_to_le32(MD_FEATURE_RESHAPE_ACTIVE)))
@@ -1506,7 +1533,7 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 			 * If that couldn't happen, the "-nobackup" version
 			 * will be used.
 			 */
-			if (strcmp(update, "revert-reshape-nobackup") == 0 &&
+			if (update == UOPT_SPEC_REVERT_RESHAPE_NOBACKUP &&
 			    sb->reshape_position == 0 &&
 			    (__le32_to_cpu(sb->delta_disks) > 0 ||
 			     (__le32_to_cpu(sb->delta_disks) == 0 &&
@@ -1530,8 +1557,7 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 			 * So we reject a revert-reshape unless the
 			 * alignment is good.
 			 */
-			if (__le32_to_cpu(sb->level) >= 4 &&
-			    __le32_to_cpu(sb->level) <= 6) {
+			if (is_level456(__le32_to_cpu(sb->level))) {
 				reshape_sectors =
 					__le64_to_cpu(sb->reshape_position);
 				reshape_chunk = __le32_to_cpu(sb->new_chunk);
@@ -1570,32 +1596,40 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 			}
 		done:;
 		}
-	} else if (strcmp(update, "_reshape_progress") == 0)
+		break;
+	case UOPT_SPEC__RESHAPE_PROGRESS:
 		sb->reshape_position = __cpu_to_le64(info->reshape_progress);
-	else if (strcmp(update, "writemostly") == 0)
+		break;
+	case UOPT_SPEC_WRITEMOSTLY:
 		sb->devflags |= WriteMostly1;
-	else if (strcmp(update, "readwrite") == 0)
+		break;
+	case UOPT_SPEC_READWRITE:
 		sb->devflags &= ~WriteMostly1;
-	else if (strcmp(update, "failfast") == 0)
+		break;
+	case UOPT_SPEC_FAILFAST:
 		sb->devflags |= FailFast1;
-	else if (strcmp(update, "nofailfast") == 0)
+		break;
+	case UOPT_SPEC_NOFAILFAST:
 		sb->devflags &= ~FailFast1;
-	else if (strcmp(update, "layout-original") == 0 ||
-		 strcmp(update, "layout-alternate") == 0 ||
-		 strcmp(update, "layout-unspecified") == 0) {
+		break;
+	case UOPT_LAYOUT_ORIGINAL:
+	case UOPT_LAYOUT_ALTERNATE:
+	case UOPT_LAYOUT_UNSPECIFIED:
 		if (__le32_to_cpu(sb->level) != 0) {
 			pr_err("%s: %s only supported for RAID0\n",
-			       devname?:"", update);
+			       devname ?: "", map_num(update_options, update));
 			rv = -1;
-		} else if (strcmp(update, "layout-unspecified") == 0) {
+		} else if (update == UOPT_LAYOUT_UNSPECIFIED) {
 			sb->feature_map &= ~__cpu_to_le32(MD_FEATURE_RAID0_LAYOUT);
 			sb->layout = 0;
 		} else {
 			sb->feature_map |= __cpu_to_le32(MD_FEATURE_RAID0_LAYOUT);
-			sb->layout = __cpu_to_le32(update[7] == 'o' ? 1 : 2);
+			sb->layout = __cpu_to_le32(update == UOPT_LAYOUT_ORIGINAL ? 1 : 2);
 		}
-	} else
+		break;
+	default:
 		rv = -1;
+	}
 
 	sb->sb_csum = calc_sb_1_csum(sb);
 
@@ -2207,6 +2241,7 @@ static int load_super1(struct supertype *st, int fd, char *devname)
 		tst.ss = &super1;
 		for (tst.minor_version = 0; tst.minor_version <= 2;
 		     tst.minor_version++) {
+			tst.ignore_hw_compat = st->ignore_hw_compat;
 			switch(load_super1(&tst, fd, devname)) {
 			case 0: super = tst.sb;
 				if (bestvers == -1 ||
@@ -2313,7 +2348,6 @@ static int load_super1(struct supertype *st, int fd, char *devname)
 		free(super);
 		return 2;
 	}
-	st->sb = super;
 
 	bsb = (struct bitmap_super_s *)(((char*)super)+MAX_SB_SIZE);
 
@@ -2322,6 +2356,21 @@ static int load_super1(struct supertype *st, int fd, char *devname)
 	misc->device_size = dsize;
 	if (st->data_offset == INVALID_SECTORS)
 		st->data_offset = __le64_to_cpu(super->data_offset);
+
+	if (st->minor_version >= 1 &&
+	    st->ignore_hw_compat == 0 &&
+	    (dsize < (__le64_to_cpu(super->data_offset) +
+		      __le64_to_cpu(super->size))
+	     ||
+	     dsize < (__le64_to_cpu(super->data_offset) +
+		      __le64_to_cpu(super->data_size)))) {
+		if (devname)
+			pr_err("Device %s is not large enough for data described in superblock\n",
+			       devname);
+		free(super);
+		return 2;
+	}
+	st->sb = super;
 
 	/* Now check on the bitmap superblock */
 	if ((__le32_to_cpu(super->feature_map)&MD_FEATURE_BITMAP_OFFSET) == 0)
@@ -2674,7 +2723,17 @@ static int write_bitmap1(struct supertype *st, int fd, enum bitmap_update update
 		}
 
 		if (bms->version == BITMAP_MAJOR_CLUSTERED) {
-			if (__cpu_to_le32(st->nodes) < bms->nodes) {
+			if (st->nodes == 1) {
+				/* the parameter for nodes is not valid */
+				pr_err("Warning: cluster-md at least needs two nodes\n");
+				return -EINVAL;
+			} else if (st->nodes == 0) {
+				/*
+				 * parameter "--nodes" is not specified, (eg, add a disk to
+				 * clustered raid)
+				 */
+				break;
+			} else if (__cpu_to_le32(st->nodes) < bms->nodes) {
 				/*
 				 * Since the nodes num is not increased, no
 				 * need to check the space enough or not,
@@ -2800,7 +2859,7 @@ static int validate_geometry1(struct supertype *st, int level,
 	unsigned long long overhead;
 	int fd;
 
-	if (level == LEVEL_CONTAINER) {
+	if (is_container(level)) {
 		if (verbose)
 			pr_err("1.x metadata does not support containers\n");
 		return 0;

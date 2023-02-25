@@ -26,7 +26,6 @@
 #include	<sys/mman.h>
 #include	<stddef.h>
 #include	<stdint.h>
-#include	<signal.h>
 #include	<sys/wait.h>
 
 #if ! defined(__BIG_ENDIAN) && ! defined(__LITTLE_ENDIAN)
@@ -197,7 +196,7 @@ int Grow_Add_device(char *devname, int fd, char *newdev)
 	info.disk.minor = minor(rdev);
 	info.disk.raid_disk = d;
 	info.disk.state = (1 << MD_DISK_SYNC) | (1 << MD_DISK_ACTIVE);
-	if (st->ss->update_super(st, &info, "linear-grow-new", newdev,
+	if (st->ss->update_super(st, &info, UOPT_SPEC_LINEAR_GROW_NEW, newdev,
 				 0, 0, NULL) != 0) {
 		pr_err("Preparing new metadata failed on %s\n", newdev);
 		close(nfd);
@@ -255,7 +254,7 @@ int Grow_Add_device(char *devname, int fd, char *newdev)
 		info.array.active_disks = nd+1;
 		info.array.working_disks = nd+1;
 
-		if (st->ss->update_super(st, &info, "linear-grow-update", dv,
+		if (st->ss->update_super(st, &info, UOPT_SPEC_LINEAR_GROW_UPDATE, dv,
 				     0, 0, NULL) != 0) {
 			pr_err("Updating metadata failed on %s\n", dv);
 			close(fd2);
@@ -430,9 +429,10 @@ int Grow_addbitmap(char *devname, int fd, struct context *c, struct shape *s)
 			dv = map_dev(disk.major, disk.minor, 1);
 			if (!dv)
 				continue;
-			if (((disk.state & (1 << MD_DISK_WRITEMOSTLY)) == 0) &&
+			if ((disk.state & (1 << MD_DISK_WRITEMOSTLY)) &&
 			   (strcmp(s->bitmap_file, "clustered") == 0)) {
 				pr_err("%s disks marked write-mostly are not supported with clustered bitmap\n",devname);
+				free(mdi);
 				return 1;
 			}
 			fd2 = dev_open(dv, O_RDWR);
@@ -454,8 +454,10 @@ int Grow_addbitmap(char *devname, int fd, struct context *c, struct shape *s)
 				pr_err("failed to load super-block.\n");
 			}
 			close(fd2);
-			if (rv)
+			if (rv) {
+				free(mdi);
 				return 1;
+			}
 		}
 		if (offset_setable) {
 			st->ss->getinfo_super(st, mdi, NULL);
@@ -548,7 +550,7 @@ int Grow_consistency_policy(char *devname, int fd, struct context *c, struct sha
 	if (s->consistency_policy != CONSISTENCY_POLICY_RESYNC &&
 	    s->consistency_policy != CONSISTENCY_POLICY_PPL) {
 		pr_err("Operation not supported for consistency policy %s\n",
-		       map_num(consistency_policies, s->consistency_policy));
+		       map_num_s(consistency_policies, s->consistency_policy));
 		return 1;
 	}
 
@@ -579,14 +581,14 @@ int Grow_consistency_policy(char *devname, int fd, struct context *c, struct sha
 
 	if (sra->consistency_policy == (unsigned)s->consistency_policy) {
 		pr_err("Consistency policy is already %s\n",
-		       map_num(consistency_policies, s->consistency_policy));
+		       map_num_s(consistency_policies, s->consistency_policy));
 		ret = 1;
 		goto free_info;
 	} else if (sra->consistency_policy != CONSISTENCY_POLICY_RESYNC &&
 		   sra->consistency_policy != CONSISTENCY_POLICY_PPL) {
 		pr_err("Current consistency policy is %s, cannot change to %s\n",
-		       map_num(consistency_policies, sra->consistency_policy),
-		       map_num(consistency_policies, s->consistency_policy));
+		       map_num_s(consistency_policies, sra->consistency_policy),
+		       map_num_s(consistency_policies, s->consistency_policy));
 		ret = 1;
 		goto free_info;
 	}
@@ -603,12 +605,12 @@ int Grow_consistency_policy(char *devname, int fd, struct context *c, struct sha
 	}
 
 	if (subarray) {
-		char *update;
+		enum update_opt update;
 
 		if (s->consistency_policy == CONSISTENCY_POLICY_PPL)
-			update = "ppl";
+			update = UOPT_PPL;
 		else
-			update = "no-ppl";
+			update = UOPT_NO_PPL;
 
 		sprintf(container_dev, "/dev/%s", st->container_devnm);
 
@@ -666,7 +668,7 @@ int Grow_consistency_policy(char *devname, int fd, struct context *c, struct sha
 					goto free_info;
 				}
 
-				ret = st->ss->update_super(st, sra, "ppl",
+				ret = st->ss->update_super(st, sra, UOPT_PPL,
 							   devname,
 							   c->verbose, 0, NULL);
 				if (ret) {
@@ -705,8 +707,8 @@ int Grow_consistency_policy(char *devname, int fd, struct context *c, struct sha
 	}
 
 	ret = sysfs_set_str(sra, NULL, "consistency_policy",
-			    map_num(consistency_policies,
-				    s->consistency_policy));
+			    map_num_s(consistency_policies,
+					 s->consistency_policy));
 	if (ret)
 		pr_err("Failed to change array consistency policy\n");
 
@@ -955,7 +957,7 @@ int start_reshape(struct mdinfo *sra, int already_running,
 			err = sysfs_set_str(sra, NULL, "sync_action",
 					    "reshape");
 			if (err)
-				sleep(1);
+				sleep_for(1, 0, true);
 		} while (err && errno == EBUSY && cnt-- > 0);
 	}
 	return err;
@@ -1001,8 +1003,8 @@ int remove_disks_for_takeover(struct supertype *st,
 				rv = 1;
 			sysfs_free(arrays);
 			if (rv) {
-				pr_err("Error. Cannot perform operation on /dev/%s\n", st->devnm);
-				pr_err("For this operation it MUST be single array in container\n");
+				pr_err("Error. Cannot perform operation on %s- for this operation "
+				       "it MUST be single array in container\n", st->devnm);
 				return rv;
 			}
 		}
@@ -1774,9 +1776,67 @@ static int reshape_container(char *container, char *devname,
 			     char *backup_file, int verbose,
 			     int forked, int restart, int freeze_reshape);
 
+/**
+ * prepare_external_reshape() - prepares update on external metadata if supported.
+ * @devname: Device name.
+ * @subarray: Subarray.
+ * @st: Supertype.
+ * @container: Container.
+ * @cfd: Container file descriptor.
+ *
+ * Function checks that the requested reshape is supported on external metadata,
+ * and performs an initial check that the container holds the pre-requisite
+ * spare devices (mdmon owns final validation).
+ *
+ * Return: 0 on success, else 1
+ */
+static int prepare_external_reshape(char *devname, char *subarray,
+				    struct supertype *st, char *container,
+				    const int cfd)
+{
+	struct mdinfo *cc = NULL;
+	struct mdinfo *content = NULL;
+
+	if (st->ss->load_container(st, cfd, NULL)) {
+		pr_err("Cannot read superblock for %s\n", devname);
+		return 1;
+	}
+
+	if (!st->ss->container_content)
+		return 1;
+
+	cc = st->ss->container_content(st, subarray);
+	for (content = cc; content ; content = content->next) {
+		/*
+		 * check if reshape is allowed based on metadata
+		 * indications stored in content.array.status
+		 */
+		if (is_bit_set(&content->array.state, MD_SB_BLOCK_VOLUME) ||
+		    is_bit_set(&content->array.state, MD_SB_BLOCK_CONTAINER_RESHAPE)) {
+			pr_err("Cannot reshape arrays in container with unsupported metadata: %s(%s)\n",
+			       devname, container);
+			goto error;
+		}
+		if (content->consistency_policy == CONSISTENCY_POLICY_PPL) {
+			pr_err("Operation not supported when ppl consistency policy is enabled\n");
+			goto error;
+		}
+		if (content->consistency_policy == CONSISTENCY_POLICY_BITMAP) {
+			pr_err("Operation not supported when write-intent bitmap consistency policy is enabled\n");
+			goto error;
+		}
+	}
+	sysfs_free(cc);
+	if (mdmon_running(container))
+		st->update_tail = &st->updates;
+	return 0;
+error:
+	sysfs_free(cc);
+	return 1;
+}
+
 int Grow_reshape(char *devname, int fd,
 		 struct mddev_dev *devlist,
-		 unsigned long long data_offset,
 		 struct context *c, struct shape *s)
 {
 	/* Make some changes in the shape of an array.
@@ -1801,7 +1861,7 @@ int Grow_reshape(char *devname, int fd,
 	struct supertype *st;
 	char *subarray = NULL;
 
-	int frozen;
+	int frozen = 0;
 	int changed = 0;
 	char *container = NULL;
 	int cfd = -1;
@@ -1810,7 +1870,7 @@ int Grow_reshape(char *devname, int fd,
 	int added_disks;
 
 	struct mdinfo info;
-	struct mdinfo *sra;
+	struct mdinfo *sra = NULL;
 
 	if (md_get_array_info(fd, &array) < 0) {
 		pr_err("%s is not an active md array - aborting\n",
@@ -1822,7 +1882,7 @@ int Grow_reshape(char *devname, int fd,
 		return 1;
 	}
 
-	if (data_offset != INVALID_SECTORS && array.level != 10 &&
+	if (s->data_offset != INVALID_SECTORS && array.level != 10 &&
 	    (array.level < 4 || array.level > 6)) {
 		pr_err("--grow --data-offset not yet supported\n");
 		return 1;
@@ -1867,13 +1927,7 @@ int Grow_reshape(char *devname, int fd,
 		}
 	}
 
-	/* in the external case we need to check that the requested reshape is
-	 * supported, and perform an initial check that the container holds the
-	 * pre-requisite spare devices (mdmon owns final validation)
-	 */
 	if (st->ss->external) {
-		int retval;
-
 		if (subarray) {
 			container = st->container_devnm;
 			cfd = open_dev_excl(st->container_devnm);
@@ -1889,58 +1943,20 @@ int Grow_reshape(char *devname, int fd,
 			return 1;
 		}
 
-		retval = st->ss->load_container(st, cfd, NULL);
+		rv = prepare_external_reshape(devname, subarray, st,
+					      container, cfd);
+		if (rv > 0) {
+			free(subarray);
+			close(cfd);
+			goto release;
+		}
 
-		if (retval) {
-			pr_err("Cannot read superblock for %s\n", devname);
+		if (s->raiddisks && subarray) {
+			pr_err("--raid-devices operation can be performed on a container only\n");
+			close(cfd);
 			free(subarray);
 			return 1;
 		}
-
-		/* check if operation is supported for metadata handler */
-		if (st->ss->container_content) {
-			struct mdinfo *cc = NULL;
-			struct mdinfo *content = NULL;
-
-			cc = st->ss->container_content(st, subarray);
-			for (content = cc; content ; content = content->next) {
-				int allow_reshape = 1;
-
-				/* check if reshape is allowed based on metadata
-				 * indications stored in content.array.status
-				 */
-				if (content->array.state &
-				    (1 << MD_SB_BLOCK_VOLUME))
-					allow_reshape = 0;
-				if (content->array.state &
-				    (1 << MD_SB_BLOCK_CONTAINER_RESHAPE))
-					allow_reshape = 0;
-				if (!allow_reshape) {
-					pr_err("cannot reshape arrays in container with unsupported metadata: %s(%s)\n",
-					       devname, container);
-					sysfs_free(cc);
-					free(subarray);
-					return 1;
-				}
-				if (content->consistency_policy ==
-				    CONSISTENCY_POLICY_PPL) {
-					pr_err("Operation not supported when ppl consistency policy is enabled\n");
-					sysfs_free(cc);
-					free(subarray);
-					return 1;
-				}
-				if (content->consistency_policy ==
-				    CONSISTENCY_POLICY_BITMAP) {
-					pr_err("Operation not supported when write-intent bitmap is enabled\n");
-					sysfs_free(cc);
-					free(subarray);
-					return 1;
-				}
-			}
-			sysfs_free(cc);
-		}
-		if (mdmon_running(container))
-			st->update_tail = &st->updates;
 	}
 
 	added_disks = 0;
@@ -1994,6 +2010,12 @@ int Grow_reshape(char *devname, int fd,
 
 		if (orig_size == 0) {
 			pr_err("Cannot set device size in this type of array.\n");
+			rv = 1;
+			goto release;
+		}
+
+		if (array.level == 0) {
+			pr_err("Component size change is not supported for RAID0\n");
 			rv = 1;
 			goto release;
 		}
@@ -2156,7 +2178,7 @@ size_change_error:
 					devname, s->size);
 		}
 		changed = 1;
-	} else if (array.level != LEVEL_CONTAINER) {
+	} else if (!is_container(array.level)) {
 		s->size = get_component_size(fd)/2;
 		if (s->size == 0)
 			s->size = array.size;
@@ -2166,7 +2188,7 @@ size_change_error:
 	if ((s->level == UnSet || s->level == array.level) &&
 	    (s->layout_str == NULL) &&
 	    (s->chunk == 0 || s->chunk == array.chunk_size) &&
-	    data_offset == INVALID_SECTORS &&
+	    s->data_offset == INVALID_SECTORS &&
 	    (s->raiddisks == 0 || s->raiddisks == array.raid_disks)) {
 		/* Nothing more to do */
 		if (!changed && c->verbose >= 0)
@@ -2212,7 +2234,7 @@ size_change_error:
 	info.component_size = s->size*2;
 	info.new_level = s->level;
 	info.new_chunk = s->chunk * 1024;
-	if (info.array.level == LEVEL_CONTAINER) {
+	if (is_container(info.array.level)) {
 		info.delta_disks = UnSet;
 		info.array.raid_disks = s->raiddisks;
 	} else if (s->raiddisks)
@@ -2236,7 +2258,7 @@ size_change_error:
 		info.new_layout = UnSet;
 		if (info.array.level == 6 && info.new_level == UnSet) {
 			char l[40], *h;
-			strcpy(l, map_num(r6layout, info.array.layout));
+			strcpy(l, map_num_s(r6layout, info.array.layout));
 			h = strrchr(l, '-');
 			if (h && strcmp(h, "-6") == 0) {
 				*h = 0;
@@ -2261,7 +2283,7 @@ size_change_error:
 			info.new_layout = info.array.layout;
 		else if (info.array.level == 5 && info.new_level == 6) {
 			char l[40];
-			strcpy(l, map_num(r5layout, info.array.layout));
+			strcpy(l, map_num_s(r5layout, info.array.layout));
 			strcat(l, "-6");
 			info.new_layout = map_name(r6layout, l);
 		} else {
@@ -2325,7 +2347,7 @@ size_change_error:
 				printf("layout for %s set to %d\n",
 				       devname, array.layout);
 		}
-	} else if (array.level == LEVEL_CONTAINER) {
+	} else if (is_container(array.level)) {
 		/* This change is to be applied to every array in the
 		 * container.  This is only needed when the metadata imposes
 		 * restraints of the various arrays in the container.
@@ -2366,7 +2388,7 @@ size_change_error:
 		}
 		sync_metadata(st);
 		rv = reshape_array(container, fd, devname, st, &info, c->force,
-				   devlist, data_offset, c->backup_file,
+				   devlist, s->data_offset, c->backup_file,
 				   c->verbose, 0, 0, 0);
 		frozen = 0;
 	}
@@ -2931,7 +2953,7 @@ static int impose_level(int fd, int level, char *devname, int verbose)
 	}
 
 	md_get_array_info(fd, &array);
-	if (level == 0 && (array.level >= 4 && array.level <= 6)) {
+	if (level == 0 && is_level456(array.level)) {
 		/* To convert to RAID0 we need to fail and
 		 * remove any non-data devices. */
 		int found = 0;
@@ -3221,7 +3243,7 @@ static int reshape_array(char *container, int fd, char *devname,
 	 * level and frozen, we can safely add them.
 	 */
 	if (devlist) {
-		if (Manage_subdevs(devname, fd, devlist, verbose, 0, NULL, 0))
+		if (Manage_subdevs(devname, fd, devlist, verbose, 0, UOPT_UNDEFINED, 0))
 			goto release;
 	}
 
@@ -3501,7 +3523,6 @@ started:
 			return 0;
 		}
 
-	close(fd);
 	/* Now we just need to kick off the reshape and watch, while
 	 * handling backups of the data...
 	 * This is all done by a forked background process.
@@ -3521,6 +3542,9 @@ started:
 		map_fork();
 		break;
 	}
+
+	/* Close unused file descriptor in the forked process */
+	close_fd(&fd);
 
 	/* If another array on the same devices is busy, the
 	 * reshape will wait for them.  This would mean that
@@ -3560,7 +3584,8 @@ started:
 		fd = -1;
 	mlockall(MCL_FUTURE);
 
-	signal(SIGTERM, catch_term);
+	if (signal_s(SIGTERM, catch_term) == SIG_ERR)
+		goto release;
 
 	if (st->ss->external) {
 		/* metadata handler takes it from here */
@@ -4925,7 +4950,8 @@ int Grow_restart(struct supertype *st, struct mdinfo *info, int *fdlist,
 				continue;
 			st->ss->getinfo_super(st, &dinfo, NULL);
 			dinfo.reshape_progress = info->reshape_progress;
-			st->ss->update_super(st, &dinfo, "_reshape_progress",
+			st->ss->update_super(st, &dinfo,
+					     UOPT_SPEC__RESHAPE_PROGRESS,
 					     NULL,0, 0, NULL);
 			st->ss->store_super(st, fdlist[j]);
 			st->ss->free_super(st);
@@ -5042,7 +5068,7 @@ int Grow_continue_command(char *devname, int fd,
 			}
 			st->ss->getinfo_super(st, content, NULL);
 			if (!content->reshape_active)
-				sleep(3);
+				sleep_for(3, 0, true);
 			else
 				break;
 		} while (cnt-- > 0);

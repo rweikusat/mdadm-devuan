@@ -56,7 +56,6 @@
 #include	<errno.h>
 #include	<string.h>
 #include	<fcntl.h>
-#include	<signal.h>
 #include	<dirent.h>
 #ifdef USE_PTHREADS
 #include	<pthread.h>
@@ -100,7 +99,7 @@ static int clone_monitor(struct supertype *container)
 	if (rc)
 		return rc;
 	while (mon_tid == -1)
-		usleep(10);
+		sleep_for(0, USEC_TO_NSEC(10), true);
 	pthread_attr_destroy(&attr);
 
 	mgr_tid = syscall(SYS_gettid);
@@ -210,7 +209,7 @@ static void try_kill_monitor(pid_t pid, char *devname, int sock)
 		rv = kill(pid, SIGUSR1);
 		if (rv < 0)
 			break;
-		usleep(200000);
+		sleep_for(0, MSEC_TO_NSEC(200), true);
 	}
 }
 
@@ -289,6 +288,15 @@ void usage(void)
 	exit(2);
 }
 
+static bool is_duplicate_opt(const int opt, const int set_val, const char *long_name)
+{
+	if (opt == set_val) {
+		pr_err("--%s option duplicated!\n", long_name);
+		return true;
+	}
+	return false;
+}
+
 static int mdmon(char *devnm, int must_fork, int takeover);
 
 int main(int argc, char *argv[])
@@ -300,6 +308,7 @@ int main(int argc, char *argv[])
 	int all = 0;
 	int takeover = 0;
 	int dofork = 1;
+	bool help = false;
 	static struct option options[] = {
 		{"all", 0, NULL, 'a'},
 		{"takeover", 0, NULL, 't'},
@@ -308,6 +317,41 @@ int main(int argc, char *argv[])
 		{"foreground", 0, NULL, 'F'},
 		{NULL, 0, NULL, 0}
 	};
+
+	while ((opt = getopt_long(argc, argv, "thaF", options, NULL)) != -1) {
+		switch (opt) {
+		case 'a':
+			if (is_duplicate_opt(all, 1, "all"))
+				exit(1);
+			container_name = argv[optind-1];
+			all = 1;
+			break;
+		case 't':
+			if (is_duplicate_opt(takeover, 1, "takeover"))
+				exit(1);
+			takeover = 1;
+			break;
+		case 'F':
+			if (is_duplicate_opt(dofork, 0, "foreground"))
+				exit(1);
+			dofork = 0;
+			break;
+		case OffRootOpt:
+			if (is_duplicate_opt(argv[0][0], '@', "offroot"))
+				exit(1);
+			argv[0][0] = '@';
+			break;
+		case 'h':
+			if (is_duplicate_opt(help, true, "help"))
+				exit(1);
+			help = true;
+			break;
+		default:
+			usage();
+			break;
+		}
+	}
+
 
 	if (in_initrd()) {
 		/*
@@ -318,41 +362,22 @@ int main(int argc, char *argv[])
 		argv[0][0] = '@';
 	}
 
-	while ((opt = getopt_long(argc, argv, "thaF", options, NULL)) != -1) {
-		switch (opt) {
-		case 'a':
-			container_name = argv[optind-1];
-			all = 1;
-			break;
-		case 't':
-			takeover = 1;
-			break;
-		case 'F':
-			dofork = 0;
-			break;
-		case OffRootOpt:
-			argv[0][0] = '@';
-			break;
-		case 'h':
-		default:
-			usage();
-			break;
+	if (all == 0 && container_name == NULL) {
+		if (argv[optind]) {
+			container_name = get_md_name(argv[optind]);
+			if (!container_name)
+				return 1;
 		}
 	}
 
-	if (all == 0 && container_name == NULL) {
-		if (argv[optind])
-			container_name = argv[optind];
-	}
-
-	if (container_name == NULL)
-		usage();
-
-	if (argc - optind > 1)
+	if (container_name == NULL || argc - optind > 1)
 		usage();
 
 	if (strcmp(container_name, "/proc/mdstat") == 0)
 		all = 1;
+
+	if (help)
+		usage();
 
 	if (all) {
 		struct mdstat_ent *mdstat, *e;
@@ -377,21 +402,17 @@ int main(int argc, char *argv[])
 		free_mdstat(mdstat);
 
 		return status;
-	} else if (strncmp(container_name, "md", 2) == 0) {
-		int id = devnm2devid(container_name);
-		if (id)
-			devnm = container_name;
 	} else {
-		struct stat st;
+		int mdfd = open_mddev(container_name, 0);
+		devnm = fd2devnm(mdfd);
 
-		if (stat(container_name, &st) == 0)
-			devnm = xstrdup(stat2devnm(&st));
+		close(mdfd);
 	}
 
 	if (!devnm) {
 		pr_err("%s is not a valid md device name\n",
 			container_name);
-		exit(1);
+		return 1;
 	}
 	return mdmon(devnm, dofork && do_fork(), takeover);
 }
