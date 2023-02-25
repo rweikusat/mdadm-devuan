@@ -244,7 +244,7 @@ int Incremental(struct mddev_dev *devlist, struct context *c,
 		c->autof = ci->autof;
 
 	name_to_use = info.name;
-	if (name_to_use[0] == 0 && info.array.level == LEVEL_CONTAINER) {
+	if (name_to_use[0] == 0 && is_container(info.array.level)) {
 		name_to_use = info.text_version;
 		trustworthy = METADATA;
 	}
@@ -472,7 +472,7 @@ int Incremental(struct mddev_dev *devlist, struct context *c,
 
 	/* 7/ Is there enough devices to possibly start the array? */
 	/* 7a/ if not, finish with success. */
-	if (info.array.level == LEVEL_CONTAINER) {
+	if (is_container(info.array.level)) {
 		char devnm[32];
 		/* Try to assemble within the container */
 		sysfs_uevent(sra, "change");
@@ -1025,7 +1025,7 @@ static int array_try_spare(char *devname, int *dfdp, struct dev_policy *pol,
 			close(dfd);
 			*dfdp = -1;
 			rv =  Manage_subdevs(chosen->sys_name, mdfd, &devlist,
-					     -1, 0, NULL, 0);
+					     -1, 0, UOPT_UNDEFINED, 0);
 			close(mdfd);
 		}
 		if (verbose > 0) {
@@ -1499,7 +1499,7 @@ static int Incremental_container(struct supertype *st, char *devname,
 		return 0;
 	}
 	for (ra = list ; ra ; ra = ra->next) {
-		int mdfd;
+		int mdfd = -1;
 		char chosen_name[1024];
 		struct map_ent *mp;
 		struct mddev_ident *match = NULL;
@@ -1514,6 +1514,12 @@ static int Incremental_container(struct supertype *st, char *devname,
 
 		if (mp) {
 			mdfd = open_dev(mp->devnm);
+			if (!is_fd_valid(mdfd)) {
+				pr_err("failed to open %s: %s.\n",
+				       mp->devnm, strerror(errno));
+				rv = 2;
+				goto release;
+			}
 			if (mp->path)
 				strcpy(chosen_name, mp->path);
 			else
@@ -1573,21 +1579,25 @@ static int Incremental_container(struct supertype *st, char *devname,
 					    c->autof,
 					    trustworthy,
 					    chosen_name, 0);
-		}
-		if (only && (!mp || strcmp(mp->devnm, only) != 0))
-			continue;
 
-		if (mdfd < 0) {
-			pr_err("failed to open %s: %s.\n",
-				chosen_name, strerror(errno));
-			return 2;
+			if (!is_fd_valid(mdfd)) {
+				pr_err("create_mddev failed with chosen name %s: %s.\n",
+				       chosen_name, strerror(errno));
+				rv = 2;
+				goto release;
+			}
+		}
+
+		if (only && (!mp || strcmp(mp->devnm, only) != 0)) {
+			close_fd(&mdfd);
+			continue;
 		}
 
 		assemble_container_content(st, mdfd, ra, c,
 					   chosen_name, &result);
 		map_free(map);
 		map = NULL;
-		close(mdfd);
+		close_fd(&mdfd);
 	}
 	if (c->export && result) {
 		char sep = '=';
@@ -1610,7 +1620,11 @@ static int Incremental_container(struct supertype *st, char *devname,
 		}
 		printf("\n");
 	}
-	return 0;
+
+release:
+	map_free(map);
+	sysfs_free(list);
+	return rv;
 }
 
 static void run_udisks(char *arg1, char *arg2)
@@ -1652,7 +1666,7 @@ static void remove_from_member_array(struct mdstat_ent *memb,
 
 	if (subfd >= 0) {
 		rv = Manage_subdevs(memb->devnm, subfd, devlist, verbose,
-				    0, NULL, 0);
+				    0, UOPT_UNDEFINED, 0);
 		if (rv & 2) {
 			if (sysfs_init(&mmdi, -1, memb->devnm))
 				pr_err("unable to initialize sysfs for: %s\n",
@@ -1730,7 +1744,7 @@ int IncrementalRemove(char *devname, char *id_path, int verbose)
 
 	memset(&devlist, 0, sizeof(devlist));
 	devlist.devname = devname;
-	devlist.disposition = 'f';
+	devlist.disposition = 'I';
 	/* for a container, we must fail each member array */
 	if (ent->metadata_version &&
 	    strncmp(ent->metadata_version, "external:", 9) == 0) {
@@ -1744,7 +1758,7 @@ int IncrementalRemove(char *devname, char *id_path, int verbose)
 		free_mdstat(mdstat);
 	} else {
 		rv |= Manage_subdevs(ent->devnm, mdfd, &devlist,
-				    verbose, 0, NULL, 0);
+				    verbose, 0, UOPT_UNDEFINED, 0);
 		if (rv & 2) {
 		/* Failed due to EBUSY, try to stop the array.
 		 * Give udisks a chance to unmount it first.
@@ -1756,7 +1770,7 @@ int IncrementalRemove(char *devname, char *id_path, int verbose)
 
 	devlist.disposition = 'r';
 	rv = Manage_subdevs(ent->devnm, mdfd, &devlist,
-			    verbose, 0, NULL, 0);
+			    verbose, 0, UOPT_UNDEFINED, 0);
 end:
 	close(mdfd);
 	free_mdstat(ent);

@@ -22,7 +22,6 @@
 #include "mdmon.h"
 #include <sys/syscall.h>
 #include <sys/select.h>
-#include <signal.h>
 
 static char *array_states[] = {
 	"clear", "inactive", "suspended", "readonly", "read-auto",
@@ -311,6 +310,9 @@ static int check_for_cleared_bb(struct active_array *a, struct mdinfo *mdi)
 	struct superswitch *ss = a->container->ss;
 	struct md_bb *bb;
 	int i;
+
+	if (!ss->get_bad_blocks)
+		return -1;
 
 	/*
 	 * Get a list of bad blocks for an array, then read list of
