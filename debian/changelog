@@ -1,3 +1,12 @@
+mdadm (4.2+20230223-2) experimental; urgency=medium
+
+  * Uploading to experimental.
+  * Updating upstream contact in copyright.
+  * Silencing mounting efivars in initramfs-hook by only mounting if not
+    done already.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Sat, 25 Feb 2023 22:34:46 +0100
+
 mdadm (4.2+20230223-1) experimental; urgency=medium
 
   * Uploading to experimental.
