@@ -32,11 +32,6 @@ override_dh_install:
 	mkdir -p $(CURDIR)/debian/mdadm/etc/mdadm
 	chmod +x $(CURDIR)/debian/mdadm/usr/share/mdadm/mdcheck
 
-ifeq ($(shell dpkg-vendor --derives-from Ubuntu && echo yes), yes)
-	install -Dm0644 debian/source_mdadm.py \
-		$(CURDIR)/debian/mdadm/usr/share/apport/package-hooks/source_mdadm.py
-endif
-
 override_dh_installsystemd:
 	dh_installsystemd --name mdadm-shutdown
 
