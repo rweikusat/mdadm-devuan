@@ -1,6 +1,5 @@
 fix-manpages.patch
 fix-command-line-help.patch
-documentation-keys-in-service-files.patch
 mdmonitor-service-simplify.diff
 host-name-in-default-mailfrom.patch
 exit-gracefully-when-md-device-not-found.patch
