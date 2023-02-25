@@ -69,7 +69,11 @@ done
 if [ -e /sys/firmware/efi ]
 then
 	force_load efivarfs || true
-	mount -t efivarfs -o rw,nosuid,nodev,noexec,relatime efivarfs /sys/firmware/efi/efivars || true
+
+	if ! ls /sys/firmware/efi/efivars/* > /dev/null 2>&1
+	then
+		mount -t efivarfs -o rw,nosuid,nodev,noexec,relatime efivarfs /sys/firmware/efi/efivars || true
+	fi
 fi
 
 # copy the mdadm configuration
