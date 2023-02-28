@@ -1,0 +1,34 @@
+Author: Eric Desrochers <eric.desrochers@canonical.com>
+Description: mdcheck fix empty spaces in timer unit files (LP: #1852747).
+ dh_installsystemd is failling thus FBTFS because of the spaces
+ in the systemd unit timer files directive.
+
+diff -Naurp mdadm.orig/systemd/mdcheck_continue.timer mdadm/systemd/mdcheck_continue.timer
+--- mdadm.orig/systemd/mdcheck_continue.timer
++++ mdadm/systemd/mdcheck_continue.timer
+@@ -14,4 +14,4 @@ RandomizedDelaySec=12h
+ Persistent=true
+ 
+ [Install]
+-WantedBy= mdmonitor.service
++WantedBy=mdmonitor.service
+diff -Naurp mdadm.orig/systemd/mdcheck_start.timer mdadm/systemd/mdcheck_start.timer
+--- mdadm.orig/systemd/mdcheck_start.timer
++++ mdadm/systemd/mdcheck_start.timer
+@@ -14,5 +14,5 @@ RandomizedDelaySec=24h
+ Persistent=true
+ 
+ [Install]
+-WantedBy= mdmonitor.service
+-Also= mdcheck_continue.timer
++WantedBy=mdmonitor.service
++Also=mdcheck_continue.timer
+diff -Naurp mdadm.orig/systemd/mdmonitor-oneshot.timer mdadm/systemd/mdmonitor-oneshot.timer
+--- mdadm.orig/systemd/mdmonitor-oneshot.timer
++++ mdadm/systemd/mdmonitor-oneshot.timer
+@@ -14,4 +14,4 @@ RandomizedDelaySec=24h
+ Persistent=true
+ 
+ [Install]
+-WantedBy= mdmonitor.service
++WantedBy=mdmonitor.service
