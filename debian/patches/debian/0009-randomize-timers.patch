@@ -1,0 +1,75 @@
+Author: Dimitri John Ledkov <xnox@ubuntu.com>
+Description: Randomize md array check timers (LP: #1815201).
+
+diff -Naurp mdadm.orig/systemd/mdcheck_continue.service mdadm/systemd/mdcheck_continue.service
+--- mdadm.orig/systemd/mdcheck_continue.service
++++ mdadm/systemd/mdcheck_continue.service
+@@ -13,6 +13,4 @@ Documentation=man:mdadm(8)
+ [Service]
+ Type=oneshot
+ Environment="MDADM_CHECK_DURATION=6 hours"
+-EnvironmentFile=-/run/sysconfig/mdadm
+-ExecStartPre=-/usr/lib/mdadm/mdadm_env.sh
+ ExecStart=/usr/share/mdadm/mdcheck --continue --duration ${MDADM_CHECK_DURATION}
+diff -Naurp mdadm.orig/systemd/mdcheck_continue.timer mdadm/systemd/mdcheck_continue.timer
+--- mdadm.orig/systemd/mdcheck_continue.timer
++++ mdadm/systemd/mdcheck_continue.timer
+@@ -9,7 +9,9 @@
+ Description=MD array scrubbing - continuation
+ 
+ [Timer]
+-OnCalendar= 1:05:00
++OnCalendar=daily
++RandomizedDelaySec=12h
++Persistent=true
+ 
+ [Install]
+ WantedBy= mdmonitor.service
+diff -Naurp mdadm.orig/systemd/mdcheck_start.service mdadm/systemd/mdcheck_start.service
+--- mdadm.orig/systemd/mdcheck_start.service
++++ mdadm/systemd/mdcheck_start.service
+@@ -13,6 +13,4 @@ Documentation=man:mdadm(8)
+ [Service]
+ Type=oneshot
+ Environment="MDADM_CHECK_DURATION=6 hours"
+-EnvironmentFile=-/run/sysconfig/mdadm
+-ExecStartPre=-/usr/lib/mdadm/mdadm_env.sh
+ ExecStart=/usr/share/mdadm/mdcheck --duration ${MDADM_CHECK_DURATION}
+diff -Naurp mdadm.orig/systemd/mdcheck_start.timer mdadm/systemd/mdcheck_start.timer
+--- mdadm.orig/systemd/mdcheck_start.timer
++++ mdadm/systemd/mdcheck_start.timer
+@@ -10,6 +10,8 @@ Description=MD array scrubbing
+ 
+ [Timer]
+ OnCalendar=Sun *-*-1..7 1:00:00
++RandomizedDelaySec=24h
++Persistent=true
+ 
+ [Install]
+ WantedBy= mdmonitor.service
+diff -Naurp mdadm.orig/systemd/mdmonitor-oneshot.service mdadm/systemd/mdmonitor-oneshot.service
+--- mdadm.orig/systemd/mdmonitor-oneshot.service
++++ mdadm/systemd/mdmonitor-oneshot.service
+@@ -10,7 +10,4 @@ Description=Reminder for degraded MD arr
+ Documentation=man:mdadm(8)
+ 
+ [Service]
+-Environment=MDADM_MONITOR_ARGS=--scan
+-EnvironmentFile=-/run/sysconfig/mdadm
+-ExecStartPre=-/usr/lib/mdadm/mdadm_env.sh
+-ExecStart=BINDIR/mdadm --monitor --oneshot $MDADM_MONITOR_ARGS
++ExecStart=BINDIR/mdadm --monitor --oneshot --scan
+diff -Naurp mdadm.orig/systemd/mdmonitor-oneshot.timer mdadm/systemd/mdmonitor-oneshot.timer
+--- mdadm.orig/systemd/mdmonitor-oneshot.timer
++++ mdadm/systemd/mdmonitor-oneshot.timer
+@@ -9,7 +9,9 @@
+ Description=Reminder for degraded MD arrays
+ 
+ [Timer]
+-OnCalendar= 2:00:00
++OnCalendar=daily
++RandomizedDelaySec=24h
++Persistent=true
+ 
+ [Install]
+ WantedBy= mdmonitor.service
