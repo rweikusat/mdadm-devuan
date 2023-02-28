@@ -1,4 +1,4 @@
 TODO
+debian/local/doc/*
 external-reshape-design.txt
 mdmon-design.txt
-debian/local/doc/*
