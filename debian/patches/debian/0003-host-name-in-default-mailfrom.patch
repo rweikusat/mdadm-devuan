@@ -6,12 +6,12 @@ Description: Add host name to default MAILFROM (Closes: #1006464).
 diff -Naurp mdadm.orig/Monitor.c mdadm/Monitor.c
 --- mdadm.orig/Monitor.c
 +++ mdadm/Monitor.c
-@@ -447,7 +447,7 @@ static void send_event_email(const char
- 	if (info->mailfrom)
- 		fprintf(mp, "From: %s\n", info->mailfrom);
+@@ -627,7 +627,7 @@ static void send_event_email(const struc
+ 	if (info.mailfrom)
+ 		fprintf(mp, "From: %s\n", info.mailfrom);
  	else
 -		fprintf(mp, "From: %s monitoring <root>\n", Name);
-+		fprintf(mp, "From: %s monitoring <root@%s>\n", Name, hname);
- 	fprintf(mp, "To: %s\n", info->mailaddr);
- 	fprintf(mp, "Subject: %s event on %s:%s\n\n", event, dev, hname);
- 	fprintf(mp, "This is an automatically generated mail message. \n");
+++		fprintf(mp, "From: %s monitoring <root@%s>\n", Name, info.hostname);
+ 	fprintf(mp, "To: %s\n", info.mailaddr);
+ 	fprintf(mp, "Subject: %s event on %s:%s\n\n", data->event_name, data->dev, info.hostname);
+ 	fprintf(mp, "This is an automatically generated mail message.\n");
