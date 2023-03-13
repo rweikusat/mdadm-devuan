@@ -713,12 +713,12 @@ static struct sys_dev* find_disk_attached_hba(int fd, const char *devname)
 
 	for (elem = list; elem; elem = elem->next)
 		if (path_attached_to_hba(disk_path, elem->path))
-			return elem;
+			break;
 
 	if (disk_path != devname)
 		free(disk_path);
 
-	return NULL;
+	return elem;
 }
 
 static int find_intel_hba_capability(int fd, struct intel_super *super,
@@ -4515,6 +4515,7 @@ static int load_imsm_mpb(int fd, struct intel_super *super, char *devname)
 	    MIGR_REC_BUF_SECTORS*MAX_SECTOR_SIZE) != 0) {
 		pr_err("could not allocate migr_rec buffer\n");
 		free(super->buf);
+		super->buf = NULL;
 		return 2;
 	}
 	super->clean_migration_record_by_mdmon = 0;
