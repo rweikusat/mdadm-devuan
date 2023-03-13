@@ -26,6 +26,10 @@
 #include	"md_u.h"
 #include	"md_p.h"
 #include	<ctype.h>
+#include	<fcntl.h>
+#include	<signal.h>
+#include	<sys/signalfd.h>
+#include	<sys/wait.h>
 
 static int round_size_and_verify(unsigned long long *size, int chunk)
 {
@@ -91,6 +95,382 @@ int default_layout(struct supertype *st, int level, int verbose)
 	return layout;
 }
 
+static pid_t write_zeroes_fork(int fd, struct shape *s, struct supertype *st,
+			       struct mddev_dev *dv)
+
+{
+	const unsigned long long req_size = 1 << 30;
+	unsigned long long offset_bytes, size_bytes, sz;
+	sigset_t sigset;
+	int ret = 0;
+	pid_t pid;
+
+	size_bytes = KIB_TO_BYTES(s->size);
+
+	/*
+	 * If size_bytes is zero, this is a zoned raid array where
+	 * each disk is of a different size and uses its full
+	 * disk. Thus zero the entire disk.
+	 */
+	if (!size_bytes && !get_dev_size(fd, dv->devname, &size_bytes))
+		return -1;
+
+	if (dv->data_offset != INVALID_SECTORS)
+		offset_bytes = SEC_TO_BYTES(dv->data_offset);
+	else
+		offset_bytes = SEC_TO_BYTES(st->data_offset);
+
+	pr_info("zeroing data from %lld to %lld on: %s\n",
+		offset_bytes, size_bytes, dv->devname);
+
+	pid = fork();
+	if (pid < 0) {
+		pr_err("Could not fork to zero disks: %s\n", strerror(errno));
+		return pid;
+	} else if (pid != 0) {
+		return pid;
+	}
+
+	sigemptyset(&sigset);
+	sigaddset(&sigset, SIGINT);
+	sigprocmask(SIG_UNBLOCK, &sigset, NULL);
+
+	while (size_bytes) {
+		/*
+		 * Split requests to the kernel into 1GB chunks seeing the
+		 * fallocate() call is not interruptible and blocking a
+		 * ctrl-c for several minutes is not desirable.
+		 *
+		 * 1GB is chosen as a compromise: the user may still have
+		 * to wait several seconds if they ctrl-c on devices that
+		 * zero slowly, but will reduce the number of requests
+		 * required and thus the overhead on devices that perform
+		 * better.
+		 */
+		sz = size_bytes;
+		if (sz >= req_size)
+			sz = req_size;
+
+		if (fallocate(fd, FALLOC_FL_ZERO_RANGE | FALLOC_FL_KEEP_SIZE,
+			      offset_bytes, sz)) {
+			pr_err("zeroing %s failed: %s\n", dv->devname,
+			       strerror(errno));
+			ret = 1;
+			break;
+		}
+
+		offset_bytes += sz;
+		size_bytes -= sz;
+	}
+
+	exit(ret);
+}
+
+static int wait_for_zero_forks(int *zero_pids, int count)
+{
+	int wstatus, ret = 0, i, sfd, wait_count = 0;
+	struct signalfd_siginfo fdsi;
+	bool interrupted = false;
+	sigset_t sigset;
+	ssize_t s;
+
+	for (i = 0; i < count; i++)
+		if (zero_pids[i])
+			wait_count++;
+	if (!wait_count)
+		return 0;
+
+	sigemptyset(&sigset);
+	sigaddset(&sigset, SIGINT);
+	sigaddset(&sigset, SIGCHLD);
+	sigprocmask(SIG_BLOCK, &sigset, NULL);
+
+	sfd = signalfd(-1, &sigset, 0);
+	if (sfd < 0) {
+		pr_err("Unable to create signalfd: %s\n", strerror(errno));
+		return 1;
+	}
+
+	while (1) {
+		s = read(sfd, &fdsi, sizeof(fdsi));
+		if (s != sizeof(fdsi)) {
+			pr_err("Invalid signalfd read: %s\n", strerror(errno));
+			close(sfd);
+			return 1;
+		}
+
+		if (fdsi.ssi_signo == SIGINT) {
+			printf("\n");
+			pr_info("Interrupting zeroing processes, please wait...\n");
+			interrupted = true;
+		} else if (fdsi.ssi_signo == SIGCHLD) {
+			if (!--wait_count)
+				break;
+		}
+	}
+
+	close(sfd);
+
+	for (i = 0; i < count; i++) {
+		if (!zero_pids[i])
+			continue;
+
+		waitpid(zero_pids[i], &wstatus, 0);
+		zero_pids[i] = 0;
+		if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus))
+			ret = 1;
+	}
+
+	if (interrupted) {
+		pr_err("zeroing interrupted!\n");
+		return 1;
+	}
+
+	if (ret)
+		pr_err("zeroing failed!\n");
+	else
+		pr_info("zeroing finished\n");
+
+	return ret;
+}
+
+static int add_disk_to_super(int mdfd, struct shape *s, struct context *c,
+		struct supertype *st, struct mddev_dev *dv,
+		struct mdinfo *info, int have_container, int major_num,
+		int *zero_pid)
+{
+	dev_t rdev;
+	int fd;
+
+	if (dv->disposition == 'j') {
+		info->disk.raid_disk = MD_DISK_ROLE_JOURNAL;
+		info->disk.state = (1<<MD_DISK_JOURNAL);
+	} else if (info->disk.raid_disk < s->raiddisks) {
+		info->disk.state = (1<<MD_DISK_ACTIVE) |
+			(1<<MD_DISK_SYNC);
+	} else {
+		info->disk.state = 0;
+	}
+
+	if (dv->writemostly == FlagSet) {
+		if (major_num == BITMAP_MAJOR_CLUSTERED) {
+			pr_err("Can not set %s --write-mostly with a clustered bitmap\n",dv->devname);
+			return 1;
+		} else {
+			info->disk.state |= (1<<MD_DISK_WRITEMOSTLY);
+		}
+
+	}
+
+	if (dv->failfast == FlagSet)
+		info->disk.state |= (1<<MD_DISK_FAILFAST);
+
+	if (have_container) {
+		fd = -1;
+	} else {
+		if (st->ss->external && st->container_devnm[0])
+			fd = open(dv->devname, O_RDWR);
+		else
+			fd = open(dv->devname, O_RDWR|O_EXCL);
+
+		if (fd < 0) {
+			pr_err("failed to open %s after earlier success - aborting\n",
+			       dv->devname);
+			return 1;
+		}
+		if (!fstat_is_blkdev(fd, dv->devname, &rdev))
+			return 1;
+		info->disk.major = major(rdev);
+		info->disk.minor = minor(rdev);
+	}
+	if (fd >= 0)
+		remove_partitions(fd);
+	if (st->ss->add_to_super(st, &info->disk, fd, dv->devname,
+				 dv->data_offset)) {
+		ioctl(mdfd, STOP_ARRAY, NULL);
+		return 1;
+	}
+	st->ss->getinfo_super(st, info, NULL);
+
+	if (fd >= 0 && s->write_zeroes) {
+		*zero_pid = write_zeroes_fork(fd, s, st, dv);
+		if (*zero_pid <= 0) {
+			ioctl(mdfd, STOP_ARRAY, NULL);
+			return 1;
+		}
+	}
+
+	if (have_container && c->verbose > 0)
+		pr_err("Using %s for device %d\n",
+		       map_dev(info->disk.major, info->disk.minor, 0),
+		       info->disk.number);
+
+	if (!have_container) {
+		/* getinfo_super might have lost these ... */
+		info->disk.major = major(rdev);
+		info->disk.minor = minor(rdev);
+	}
+
+	return 0;
+}
+
+static int update_metadata(int mdfd, struct shape *s, struct supertype *st,
+			   struct map_ent **map, struct mdinfo *info,
+			   char *chosen_name)
+{
+	struct mdinfo info_new;
+	struct map_ent *me = NULL;
+
+	/* check to see if the uuid has changed due to these
+	 * metadata changes, and if so update the member array
+	 * and container uuid.  Note ->write_init_super clears
+	 * the subarray cursor such that ->getinfo_super once
+	 * again returns container info.
+	 */
+	st->ss->getinfo_super(st, &info_new, NULL);
+	if (st->ss->external && is_container(s->level) &&
+	    !same_uuid(info_new.uuid, info->uuid, 0)) {
+		map_update(map, fd2devnm(mdfd),
+			   info_new.text_version,
+			   info_new.uuid, chosen_name);
+		me = map_by_devnm(map, st->container_devnm);
+	}
+
+	if (st->ss->write_init_super(st)) {
+		st->ss->free_super(st);
+		return 1;
+	}
+
+	/*
+	 * Before activating the array, perform extra steps
+	 * required to configure the internal write-intent
+	 * bitmap.
+	 */
+	if (info_new.consistency_policy == CONSISTENCY_POLICY_BITMAP &&
+	    st->ss->set_bitmap && st->ss->set_bitmap(st, info)) {
+		st->ss->free_super(st);
+		return 1;
+	}
+
+	/* update parent container uuid */
+	if (me) {
+		char *path = xstrdup(me->path);
+
+		st->ss->getinfo_super(st, &info_new, NULL);
+		map_update(map, st->container_devnm, info_new.text_version,
+			   info_new.uuid, path);
+		free(path);
+	}
+
+	flush_metadata_updates(st);
+	st->ss->free_super(st);
+
+	return 0;
+}
+
+static int add_disks(int mdfd, struct mdinfo *info, struct shape *s,
+		     struct context *c, struct supertype *st,
+		     struct map_ent **map, struct mddev_dev *devlist,
+		     int total_slots, int have_container, int insert_point,
+		     int major_num, char *chosen_name)
+{
+	struct mddev_dev *moved_disk = NULL;
+	int pass, raid_disk_num, dnum;
+	int zero_pids[total_slots];
+	struct mddev_dev *dv;
+	struct mdinfo *infos;
+	sigset_t sigset, orig_sigset;
+	int ret = 0;
+
+	/*
+	 * Block SIGINT so the main thread will always wait for the
+	 * zeroing processes when being interrupted. Otherwise the
+	 * zeroing processes will finish their work in the background
+	 * keeping the disk busy.
+	 */
+	sigemptyset(&sigset);
+	sigaddset(&sigset, SIGINT);
+	sigprocmask(SIG_BLOCK, &sigset, &orig_sigset);
+	memset(zero_pids, 0, sizeof(zero_pids));
+
+	infos = xmalloc(sizeof(*infos) * total_slots);
+	enable_fds(total_slots);
+	for (pass = 1; pass <= 2; pass++) {
+		for (dnum = 0, raid_disk_num = 0, dv = devlist; dv;
+		     dv = (dv->next) ? (dv->next) : moved_disk, dnum++) {
+			if (dnum >= total_slots)
+				abort();
+			if (dnum == insert_point) {
+				raid_disk_num += 1;
+				moved_disk = dv;
+				continue;
+			}
+			if (strcasecmp(dv->devname, "missing") == 0) {
+				raid_disk_num += 1;
+				continue;
+			}
+			if (have_container)
+				moved_disk = NULL;
+			if (have_container && dnum < total_slots - 1)
+				/* repeatedly use the container */
+				moved_disk = dv;
+
+			switch(pass) {
+			case 1:
+				infos[dnum] = *info;
+				infos[dnum].disk.number = dnum;
+				infos[dnum].disk.raid_disk = raid_disk_num++;
+
+				if (dv->disposition == 'j')
+					raid_disk_num--;
+
+				ret = add_disk_to_super(mdfd, s, c, st, dv,
+						&infos[dnum], have_container,
+						major_num, &zero_pids[dnum]);
+				if (ret)
+					goto out;
+
+				break;
+			case 2:
+				infos[dnum].errors = 0;
+
+				ret = add_disk(mdfd, st, info, &infos[dnum]);
+				if (ret) {
+					pr_err("ADD_NEW_DISK for %s failed: %s\n",
+					       dv->devname, strerror(errno));
+					if (errno == EINVAL &&
+					    info->array.level == 0) {
+						pr_err("Possibly your kernel doesn't support RAID0 layouts.\n");
+						pr_err("Either upgrade, or use --layout=dangerous\n");
+					}
+					goto out;
+				}
+				break;
+			}
+			if (!have_container &&
+			    dv == moved_disk && dnum != insert_point) break;
+		}
+
+		if (pass == 1) {
+			ret = wait_for_zero_forks(zero_pids, total_slots);
+			if (ret)
+				goto out;
+
+			ret = update_metadata(mdfd, s, st, map, info,
+					      chosen_name);
+			if (ret)
+				goto out;
+		}
+	}
+
+out:
+	if (ret)
+		wait_for_zero_forks(zero_pids, total_slots);
+	free(infos);
+	sigprocmask(SIG_SETMASK, &orig_sigset, NULL);
+	return ret;
+}
+
 int Create(struct supertype *st, char *mddev,
 	   char *name, int *uuid,
 	   int subdevs, struct mddev_dev *devlist,
@@ -117,7 +497,7 @@ int Create(struct supertype *st, char *mddev,
 	unsigned long long minsize = 0, maxsize = 0;
 	char *mindisc = NULL;
 	char *maxdisc = NULL;
-	int dnum, raid_disk_num;
+	int dnum;
 	struct mddev_dev *dv;
 	dev_t rdev;
 	int fail = 0, warn = 0;
@@ -126,18 +506,16 @@ int Create(struct supertype *st, char *mddev,
 	int missing_disks = 0;
 	int insert_point = subdevs * 2; /* where to insert a missing drive */
 	int total_slots;
-	int pass;
 	int rv;
 	int bitmap_fd;
 	int have_container = 0;
 	int container_fd = -1;
 	int need_mdmon = 0;
 	unsigned long long bitmapsize;
-	struct mdinfo info, *infos;
+	struct mdinfo info;
 	int did_default = 0;
 	int do_default_layout = 0;
 	int do_default_chunk = 0;
-	unsigned long safe_mode_delay = 0;
 	char chosen_name[1024];
 	struct map_ent *map = NULL;
 	unsigned long long newsize;
@@ -778,11 +1156,12 @@ int Create(struct supertype *st, char *mddev,
 
 			mdi = sysfs_read(-1, devnm, GET_VERSION);
 
-			pr_err("Creating array inside %s container %s\n",
+			pr_info("Creating array inside %s container %s\n",
 				mdi?mdi->text_version:"managed", devnm);
 			sysfs_free(mdi);
 		} else
-			pr_err("Defaulting to version %s metadata\n", info.text_version);
+			pr_info("Defaulting to version %s metadata\n",
+				info.text_version);
 	}
 
 	map_update(&map, fd2devnm(mdfd), info.text_version,
@@ -870,175 +1249,11 @@ int Create(struct supertype *st, char *mddev,
 		}
 	}
 
-	infos = xmalloc(sizeof(*infos) * total_slots);
-	enable_fds(total_slots);
-	for (pass = 1; pass <= 2; pass++) {
-		struct mddev_dev *moved_disk = NULL; /* the disk that was moved out of the insert point */
+	if (add_disks(mdfd, &info, s, c, st, &map, devlist, total_slots,
+		      have_container, insert_point, major_num, chosen_name))
+		goto abort_locked;
 
-		for (dnum = 0, raid_disk_num = 0, dv = devlist; dv;
-		     dv = (dv->next) ? (dv->next) : moved_disk, dnum++) {
-			int fd;
-			struct mdinfo *inf = &infos[dnum];
-
-			if (dnum >= total_slots)
-				abort();
-			if (dnum == insert_point) {
-				raid_disk_num += 1;
-				moved_disk = dv;
-				continue;
-			}
-			if (strcasecmp(dv->devname, "missing") == 0) {
-				raid_disk_num += 1;
-				continue;
-			}
-			if (have_container)
-				moved_disk = NULL;
-			if (have_container && dnum < info.array.raid_disks - 1)
-				/* repeatedly use the container */
-				moved_disk = dv;
-
-			switch(pass) {
-			case 1:
-				*inf = info;
-
-				inf->disk.number = dnum;
-				inf->disk.raid_disk = raid_disk_num++;
-
-				if (dv->disposition == 'j') {
-					inf->disk.raid_disk = MD_DISK_ROLE_JOURNAL;
-					inf->disk.state = (1<<MD_DISK_JOURNAL);
-					raid_disk_num--;
-				} else if (inf->disk.raid_disk < s->raiddisks)
-					inf->disk.state = (1<<MD_DISK_ACTIVE) |
-						(1<<MD_DISK_SYNC);
-				else
-					inf->disk.state = 0;
-
-				if (dv->writemostly == FlagSet) {
-					if (major_num == BITMAP_MAJOR_CLUSTERED) {
-						pr_err("Can not set %s --write-mostly with a clustered bitmap\n",dv->devname);
-						goto abort_locked;
-					} else
-						inf->disk.state |= (1<<MD_DISK_WRITEMOSTLY);
-				}
-				if (dv->failfast == FlagSet)
-					inf->disk.state |= (1<<MD_DISK_FAILFAST);
-
-				if (have_container)
-					fd = -1;
-				else {
-					if (st->ss->external &&
-					    st->container_devnm[0])
-						fd = open(dv->devname, O_RDWR);
-					else
-						fd = open(dv->devname, O_RDWR|O_EXCL);
-
-					if (fd < 0) {
-						pr_err("failed to open %s after earlier success - aborting\n",
-							dv->devname);
-						goto abort_locked;
-					}
-					if (!fstat_is_blkdev(fd, dv->devname, &rdev))
-						return 1;
-					inf->disk.major = major(rdev);
-					inf->disk.minor = minor(rdev);
-				}
-				if (fd >= 0)
-					remove_partitions(fd);
-				if (st->ss->add_to_super(st, &inf->disk,
-							 fd, dv->devname,
-							 dv->data_offset)) {
-					ioctl(mdfd, STOP_ARRAY, NULL);
-					goto abort_locked;
-				}
-				st->ss->getinfo_super(st, inf, NULL);
-				safe_mode_delay = inf->safe_mode_delay;
-
-				if (have_container && c->verbose > 0)
-					pr_err("Using %s for device %d\n",
-						map_dev(inf->disk.major,
-							inf->disk.minor,
-							0), dnum);
-
-				if (!have_container) {
-					/* getinfo_super might have lost these ... */
-					inf->disk.major = major(rdev);
-					inf->disk.minor = minor(rdev);
-				}
-				break;
-			case 2:
-				inf->errors = 0;
-
-				rv = add_disk(mdfd, st, &info, inf);
-
-				if (rv) {
-					pr_err("ADD_NEW_DISK for %s failed: %s\n",
-					       dv->devname, strerror(errno));
-					if (errno == EINVAL &&
-					    info.array.level == 0) {
-						pr_err("Possibly your kernel doesn't support RAID0 layouts.\n");
-						pr_err("Either upgrade, or use --layout=dangerous\n");
-					}
-					goto abort_locked;
-				}
-				break;
-			}
-			if (!have_container &&
-			    dv == moved_disk && dnum != insert_point) break;
-		}
-		if (pass == 1) {
-			struct mdinfo info_new;
-			struct map_ent *me = NULL;
-
-			/* check to see if the uuid has changed due to these
-			 * metadata changes, and if so update the member array
-			 * and container uuid.  Note ->write_init_super clears
-			 * the subarray cursor such that ->getinfo_super once
-			 * again returns container info.
-			 */
-			st->ss->getinfo_super(st, &info_new, NULL);
-			if (st->ss->external && !is_container(s->level) &&
-			    !same_uuid(info_new.uuid, info.uuid, 0)) {
-				map_update(&map, fd2devnm(mdfd),
-					   info_new.text_version,
-					   info_new.uuid, chosen_name);
-				me = map_by_devnm(&map, st->container_devnm);
-			}
-
-			if (st->ss->write_init_super(st)) {
-				st->ss->free_super(st);
-				goto abort_locked;
-			}
-			/*
-			 * Before activating the array, perform extra steps
-			 * required to configure the internal write-intent
-			 * bitmap.
-			 */
-			if (info_new.consistency_policy ==
-				    CONSISTENCY_POLICY_BITMAP &&
-			    st->ss->set_bitmap &&
-			    st->ss->set_bitmap(st, &info)) {
-				st->ss->free_super(st);
-				goto abort_locked;
-			}
-
-			/* update parent container uuid */
-			if (me) {
-				char *path = xstrdup(me->path);
-
-				st->ss->getinfo_super(st, &info_new, NULL);
-				map_update(&map, st->container_devnm,
-					   info_new.text_version,
-					   info_new.uuid, path);
-				free(path);
-			}
-
-			flush_metadata_updates(st);
-			st->ss->free_super(st);
-		}
-	}
 	map_unlock(&map);
-	free(infos);
 
 	if (is_container(s->level)) {
 		/* No need to start.  But we should signal udev to
@@ -1065,7 +1280,7 @@ int Create(struct supertype *st, char *mddev,
 						    "readonly");
 				break;
 			}
-			sysfs_set_safemode(&info, safe_mode_delay);
+			sysfs_set_safemode(&info, info.safe_mode_delay);
 			if (err) {
 				pr_err("failed to activate array.\n");
 				ioctl(mdfd, STOP_ARRAY, NULL);
@@ -1103,7 +1318,7 @@ int Create(struct supertype *st, char *mddev,
 			ioctl(mdfd, RESTART_ARRAY_RW, NULL);
 		}
 		if (c->verbose >= 0)
-			pr_err("array %s started.\n", mddev);
+			pr_info("array %s started.\n", mddev);
 		if (st->ss->external && st->container_devnm[0]) {
 			if (need_mdmon)
 				start_mdmon(st->container_devnm);
