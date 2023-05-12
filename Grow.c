@@ -1708,14 +1708,6 @@ char *analyse_change(char *devname, struct mdinfo *info, struct reshape *re)
 		return NULL;
 	}
 
-	if (re->after.data_disks == re->before.data_disks &&
-	    get_linux_version() < 2006032)
-		return "in-place reshape is not safe before 2.6.32 - sorry.";
-
-	if (re->after.data_disks < re->before.data_disks &&
-	    get_linux_version() < 2006030)
-		return "reshape to fewer devices is not supported before 2.6.30 - sorry.";
-
 	re->backup_blocks = compute_backup_blocks(
 		info->new_chunk, info->array.chunk_size,
 		re->after.data_disks, re->before.data_disks);
@@ -1892,14 +1884,6 @@ int Grow_reshape(char *devname, int fd,
 	    (s->chunk || s->level!= UnSet || s->layout_str || s->raiddisks)) {
 		pr_err("cannot change component size at the same time as other changes.\n"
 			"   Change size first, then check data is intact before making other changes.\n");
-		return 1;
-	}
-
-	if (s->raiddisks && s->raiddisks < array.raid_disks &&
-	    array.level > 1 && get_linux_version() < 2006032 &&
-	    !check_env("MDADM_FORCE_FEWER")) {
-		pr_err("reducing the number of devices is not safe before Linux 2.6.32\n"
-			"       Please use a newer kernel\n");
 		return 1;
 	}
 
@@ -3516,7 +3500,7 @@ started:
 
 	if (!forked)
 		if (continue_via_systemd(container ?: sra->sys_name,
-					 GROW_SERVICE)) {
+					 GROW_SERVICE, NULL)) {
 			free(fdlist);
 			free(offsets);
 			sysfs_free(sra);
@@ -3714,7 +3698,7 @@ int reshape_container(char *container, char *devname,
 	ping_monitor(container);
 
 	if (!forked && !freeze_reshape)
-		if (continue_via_systemd(container, GROW_SERVICE))
+		if (continue_via_systemd(container, GROW_SERVICE, NULL))
 			return 0;
 
 	switch (forked ? 0 : fork()) {
