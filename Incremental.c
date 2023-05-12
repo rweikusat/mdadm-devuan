@@ -202,8 +202,7 @@ int Incremental(struct mddev_dev *devlist, struct context *c,
 	if (!match && rv == 2)
 		goto out;
 
-	if (match && match->devname &&
-	    strcasecmp(match->devname, "<ignore>") == 0) {
+	if (match && match->devname && is_devname_ignore(match->devname) == true) {
 		if (c->verbose >= 0)
 			pr_err("array containing %s is explicitly ignored by mdadm.conf\n",
 				devname);
@@ -460,8 +459,8 @@ int Incremental(struct mddev_dev *devlist, struct context *c,
 			info.array.working_disks ++;
 
 	}
-	if (strncmp(chosen_name, "/dev/md/", 8) == 0)
-		md_devname = chosen_name+8;
+	if (strncmp(chosen_name, DEV_MD_DIR, DEV_MD_DIR_LEN) == 0)
+		md_devname = chosen_name + DEV_MD_DIR_LEN;
 	else
 		md_devname = chosen_name;
 	if (c->export) {
@@ -506,6 +505,9 @@ int Incremental(struct mddev_dev *devlist, struct context *c,
 	sra = sysfs_read(mdfd, NULL, (GET_DEVS | GET_STATE |
 				    GET_OFFSET | GET_SIZE));
 	active_disks = count_active(st, sra, mdfd, &avail, &info);
+
+	if (!avail)
+		goto out_unlock;
 
 	journal_device_missing = (info.journal_device_required) && (info.journal_clean == 0);
 
@@ -1564,8 +1566,7 @@ static int Incremental_container(struct supertype *st, char *devname,
 				break;
 			}
 
-			if (match && match->devname &&
-			    strcasecmp(match->devname, "<ignore>") == 0) {
+			if (match && match->devname && is_devname_ignore(match->devname) == true) {
 				if (c->verbose > 0)
 					pr_err("array %s/%s is explicitly ignored by mdadm.conf\n",
 					       match->container, match->member);

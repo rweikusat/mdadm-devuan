@@ -974,6 +974,50 @@ dev_t devnm2devid(char *devnm)
 }
 
 /**
+ * is_devname_numbered() - helper for numbered devname verification.
+ * @devname: path or name to check.
+ * @pref: expected devname prefix.
+ * @pref_len: prefix len.
+ */
+static bool is_devname_numbered(const char *devname, const char *pref, const int pref_len)
+{
+	int val;
+
+	assert(devname && pref);
+
+	if (strncmp(devname, pref, pref_len) != 0)
+		return false;
+
+	if (parse_num(&val, devname + pref_len) != 0)
+		return false;
+
+	if (val > 127)
+		return false;
+
+	return true;
+}
+
+/**
+ * is_devname_md_numbered() - check if &devname is numbered MD device (md).
+ * @devname: path or name to check.
+ */
+bool is_devname_md_numbered(const char *devname)
+{
+	return is_devname_numbered(devname, DEV_NUM_PREF, DEV_NUM_PREF_LEN);
+}
+
+/**
+ * is_devname_md_d_numbered() - check if &devname is secondary numbered MD device (md_d).
+ * @devname: path or name to check.
+ */
+bool is_devname_md_d_numbered(const char *devname)
+{
+	static const char d_dev[] = DEV_NUM_PREF "_d";
+
+	return is_devname_numbered(devname, d_dev, sizeof(d_dev) - 1);
+}
+
+/**
  * get_md_name() - Get main dev node of the md device.
  * @devnm: Md device name or path.
  *
@@ -1916,6 +1960,7 @@ int start_mdmon(char *devnm)
 	int len;
 	pid_t pid;
 	int status;
+	char *prefix = in_initrd() ? "initrd-" : "";
 	char pathbuf[1024];
 	char *paths[4] = {
 		pathbuf,
@@ -1926,7 +1971,7 @@ int start_mdmon(char *devnm)
 
 	if (check_env("MDADM_NO_MDMON"))
 		return 0;
-	if (continue_via_systemd(devnm, MDMON_SERVICE))
+	if (continue_via_systemd(devnm, MDMON_SERVICE, prefix))
 		return 0;
 
 	/* That failed, try running mdmon directly */
@@ -2197,7 +2242,7 @@ void manage_fork_fds(int close_all)
  *	1- if systemd service has been started
  *	0- otherwise
  */
-int continue_via_systemd(char *devnm, char *service_name)
+int continue_via_systemd(char *devnm, char *service_name, char *prefix)
 {
 	int pid, status;
 	char pathbuf[1024];
@@ -2209,7 +2254,7 @@ int continue_via_systemd(char *devnm, char *service_name)
 	case  0:
 		manage_fork_fds(1);
 		snprintf(pathbuf, sizeof(pathbuf),
-			 "%s@%s.service", service_name, devnm);
+			 "%s@%s%s.service", service_name, prefix ?: "", devnm);
 		status = execl("/usr/bin/systemctl", "systemctl", "restart",
 			       pathbuf, NULL);
 		status = execl("/bin/systemctl", "systemctl", "restart",
@@ -2227,15 +2272,7 @@ int continue_via_systemd(char *devnm, char *service_name)
 
 int in_initrd(void)
 {
-	/* This is based on similar function in systemd. */
-	struct statfs s;
-	/* statfs.f_type is signed long on s390x and MIPS, causing all
-	   sorts of sign extension problems with RAMFS_MAGIC being
-	   defined as 0x858458f6 */
-	return  statfs("/", &s) >= 0 &&
-		((unsigned long)s.f_type == TMPFS_MAGIC ||
-		 ((unsigned long)s.f_type & 0xFFFFFFFFUL) ==
-		 ((unsigned long)RAMFS_MAGIC & 0xFFFFFFFFUL));
+	return access("/etc/initrd-release", F_OK) >= 0;
 }
 
 void reopen_mddev(int mdfd)

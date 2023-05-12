@@ -318,6 +318,12 @@ int main(int argc, char *argv[])
 		{NULL, 0, NULL, 0}
 	};
 
+	/*
+	 * mdmon should never complain due to lack of a platform,
+	 * that is mdadm's job if at all.
+	 */
+	imsm_set_no_platform(1);
+
 	while ((opt = getopt_long(argc, argv, "thaF", options, NULL)) != -1) {
 		switch (opt) {
 		case 'a':
@@ -352,7 +358,6 @@ int main(int argc, char *argv[])
 		}
 	}
 
-
 	if (in_initrd()) {
 		/*
 		 * set first char of argv[0] to @. This is used by
@@ -362,12 +367,15 @@ int main(int argc, char *argv[])
 		argv[0][0] = '@';
 	}
 
-	if (all == 0 && container_name == NULL) {
-		if (argv[optind]) {
-			container_name = get_md_name(argv[optind]);
-			if (!container_name)
-				return 1;
-		}
+	if (!all && argv[optind]) {
+		static const char prefix[] = "initrd/";
+		container_name = argv[optind];
+		if (strncmp(container_name, prefix,
+			    sizeof(prefix) - 1) == 0)
+			container_name += sizeof(prefix)-1;
+		container_name = get_md_name(container_name);
+		if (!container_name)
+			return 1;
 	}
 
 	if (container_name == NULL || argc - optind > 1)
