@@ -1,3 +1,12 @@
+mdadm (4.2+20230508-1) experimental; urgency=medium
+
+  * Uploading to experimental.
+  * Merging upstream version 4.2+20230508.
+  * Refreshing and updating readlink-path.patch to cover basename too.
+  * Refreshing randomize-timers.patch.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Fri, 12 May 2023 14:48:12 +0200
+
 mdadm (4.2+20230313-1) experimental; urgency=medium
 
   * Uploading to experimental.
