@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mdadm 4.1.5\n"
 "Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
-"POT-Creation-Date: 2019-02-09 08:48+0100\n"
+"POT-Creation-Date: 2023-06-18 07:24+0200\n"
 "PO-Revision-Date: 2020-04-10 09:40+0200\n"
 "Last-Translator: Mario Joussen <joussen@debian.org>\n"
 "Language-Team: German <debian-l10n-german@lists.debian.org>\n"
@@ -16,9 +16,32 @@ msgstr ""
 "Content-Type: text/plain; charset=ISO-8859-1\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#. Type: boolean
+#. Type: note
 #. Description
 #: ../mdadm.templates:2001
+msgid "no systemd init-system detected"
+msgstr ""
+
+#. Type: note
+#. Description
+#: ../mdadm.templates:2001
+msgid ""
+"The root filesystem of this system was detected to be on a RAID device, so "
+"mdadm might be required to run during boot to properly start your system."
+msgstr ""
+
+#. Type: note
+#. Description
+#: ../mdadm.templates:2001
+msgid ""
+"Beginning with newer versions of the mdadm package, init-system integration "
+"is available for systemd only. This system seems to use an alternative init-"
+"system which might or might not leave your system unbootable."
+msgstr ""
+
+#. Type: boolean
+#. Description
+#: ../mdadm.templates:3001
 msgid "Should mdadm run monthly redundancy checks of the MD arrays?"
 msgstr ""
 "Soll Mdadm monatlich die Redundanzüberprüfung auf den RAID-Verbünden "
@@ -26,7 +49,7 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../mdadm.templates:2001
+#: ../mdadm.templates:3001
 msgid ""
 "If the kernel supports it (versions greater than 2.6.14), mdadm can "
 "periodically check the redundancy of MD arrays (RAIDs). This may be a "
@@ -45,7 +68,7 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../mdadm.templates:2001
+#: ../mdadm.templates:3001
 msgid ""
 "The default, if turned on, is to check on the first Sunday of every month at "
 "01:06."
@@ -55,13 +78,13 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../mdadm.templates:3001
+#: ../mdadm.templates:4001
 msgid "Should mdadm check once a day for degraded arrays?"
 msgstr "Soll Mdadm einmal täglich auf degradierte Verbünde prüfen?"
 
 #. Type: boolean
 #. Description
-#: ../mdadm.templates:3001
+#: ../mdadm.templates:4001
 msgid ""
 "mdadm can check once a day for degraded arrays and missing spares to ensure "
 "that such events don't go unnoticed."
@@ -72,13 +95,13 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../mdadm.templates:4001
+#: ../mdadm.templates:5001
 msgid "Do you want to start the MD monitoring daemon?"
 msgstr "Möchten Sie den RAID-Überwachungsdämon starten?"
 
 #. Type: boolean
 #. Description
-#: ../mdadm.templates:4001
+#: ../mdadm.templates:5001
 msgid ""
 "The MD (RAID) monitor daemon sends email notifications in response to "
 "important MD events (such as a disk failure)."
@@ -88,19 +111,19 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../mdadm.templates:4001
+#: ../mdadm.templates:5001
 msgid "Enabling this option is recommended."
 msgstr "Das Aktivieren dieser Option ist empfohlen."
 
 #. Type: string
 #. Description
-#: ../mdadm.templates:5001
+#: ../mdadm.templates:6001
 msgid "Recipient for email notifications:"
 msgstr "Empfänger der E-Mail-Benachrichtungen:"
 
 #. Type: string
 #. Description
-#: ../mdadm.templates:5001
+#: ../mdadm.templates:6001
 msgid ""
 "Please enter the email address of the user who should get the email "
 "notifications for important MD events."
@@ -115,9 +138,9 @@ msgstr ""
 #~ "Please enter 'all', 'none', or a space-separated list of devices such as "
 #~ "'md0 md1' or 'md/1 md/d0' (the leading '/dev/' can be omitted)."
 #~ msgstr ""
-#~ "Bitte geben Sie »all«, »none« oder eine leerzeichenseparierte Geräteliste "
-#~ "wie zum Beispiel »md0 md1« oder »md/1 md/d0« ein (das führende »/dev« "
-#~ "kann weggelassen werden)."
+#~ "Bitte geben Sie »all«, »none« oder eine leerzeichenseparierte Ger�"
+#~ "�teliste wie zum Beispiel »md0 md1« oder »md/1 md/d0« ein (das "
+#~ "führende »/dev« kann weggelassen werden)."
 
 #~ msgid "for internal use - only the long description is needed."
 #~ msgstr ""
@@ -131,10 +154,10 @@ msgstr ""
 #~ "started."
 #~ msgstr ""
 #~ "Wenn das Wurzeldateisystem Ihres Systems auf einem MD-Verbund (RAID) "
-#~ "liegt, muss es frühzeitig während des Bootvorgangs gestartet werden. Wenn "
-#~ "sich Ihr Wurzeldateisystem auf einem logischen Laufwerk (LVM) befindet, "
-#~ "das sich wiederum auf einem MD Verbund befindet, müssen alle zugehörigen "
-#~ "Verbünde gestartet werden."
+#~ "liegt, muss es frühzeitig während des Bootvorgangs gestartet werden. "
+#~ "Wenn sich Ihr Wurzeldateisystem auf einem logischen Laufwerk (LVM) "
+#~ "befindet, das sich wiederum auf einem MD Verbund befindet, müssen alle "
+#~ "zugehörigen Verbünde gestartet werden."
 
 #~ msgid ""
 #~ "If you know exactly which arrays are needed to bring up the root file "
@@ -144,9 +167,9 @@ msgstr ""
 #~ msgstr ""
 #~ "Wenn Sie genau wissen, welche Verbünde benötigt werden, um das "
 #~ "Wurzeldateisystem zu starten, und Sie den Start der anderen Verbünde auf "
-#~ "einen späteren Zeitpunkt in der Bootreihenfolge verschieben wollen, geben "
-#~ "Sie die zu startenden Verbünde hier ein. Alternativ geben Sie »all« ein, "
-#~ "um alle verfügbaren Verbünde zu starten."
+#~ "einen späteren Zeitpunkt in der Bootreihenfolge verschieben wollen, "
+#~ "geben Sie die zu startenden Verbünde hier ein. Alternativ geben Sie "
+#~ "»all« ein, um alle verfügbaren Verbünde zu starten."
 
 #~ msgid ""
 #~ "If you do not need or want to start any arrays for the root file system, "
@@ -154,9 +177,9 @@ msgstr ""
 #~ "using kernel autostart or do not need any arrays to boot."
 #~ msgstr ""
 #~ "Falls Sie keine RAID-Verbünde für das Wurzeldateisystem benötigen oder "
-#~ "starten wollen, lassen Sie die Antwort leer (oder geben »none« ein). Dies "
-#~ "könnte der Fall sein, wenn Sie entweder die Autostartfunktion des Kernels "
-#~ "verwenden oder keine Verbünde zum Booten benötigen."
+#~ "starten wollen, lassen Sie die Antwort leer (oder geben »none« ein). "
+#~ "Dies könnte der Fall sein, wenn Sie entweder die Autostartfunktion des "
+#~ "Kernels verwenden oder keine Verbünde zum Booten benötigen."
 
 #~ msgid "An error occurred: device node does not exist"
 #~ msgstr "Ein Fehler ist aufgetreten: Geräteknoten existiert nicht"
@@ -194,12 +217,12 @@ msgstr ""
 #~ "ramdisk."
 #~ msgstr ""
 #~ "Diese Warnung ist nur von Bedeutung, wenn Sie RAID-Verbünde, die von der "
-#~ "initialen Ramdisk gestartet werden, benötigen, um booten zu können. Falls "
-#~ "Sie die Autostartfunktion des Kernels verwenden oder kein RAID-Verbund "
-#~ "zum frühen Zeitpunkt des Ladens der initialen Ramdisk gestartet werden "
-#~ "muss, können Sie einfach fortfahren. Alternativ wählen Sie, nicht "
-#~ "fortzufahren und geben »none« ein, wenn Sie gefragt werden, welche RAID-"
-#~ "Verbünde von der initialen Ramdisk gestartet werden sollen."
+#~ "initialen Ramdisk gestartet werden, benötigen, um booten zu können. "
+#~ "Falls Sie die Autostartfunktion des Kernels verwenden oder kein RAID-"
+#~ "Verbund zum frühen Zeitpunkt des Ladens der initialen Ramdisk gestartet "
+#~ "werden muss, können Sie einfach fortfahren. Alternativ wählen Sie, "
+#~ "nicht fortzufahren und geben »none« ein, wenn Sie gefragt werden, "
+#~ "welche RAID-Verbünde von der initialen Ramdisk gestartet werden sollen."
 
 #~ msgid "Initialise the superblock if you reuse hard disks"
 #~ msgstr ""
@@ -221,8 +244,8 @@ msgstr ""
 #~ "reconfigure mdadm` to reactivate the autostart feature."
 #~ msgstr ""
 #~ "Dazu starten Sie die RAID-Laufwerke nicht automatisch und löschen dann "
-#~ "erst den Superblock (mdadm --zero-superblock /dev/mdX). Danach können Sie "
-#~ "mit »dpkg-reconfigure mdadm« die Autostart-Funktion aktivieren."
+#~ "erst den Superblock (mdadm --zero-superblock /dev/mdX). Danach können "
+#~ "Sie mit »dpkg-reconfigure mdadm« die Autostart-Funktion aktivieren."
 
 #~ msgid ""
 #~ "You have the option to start all other arrays (those not needed for the "
@@ -233,8 +256,8 @@ msgstr ""
 #~ "Sie haben die Option, alle anderen Verbünde (diese die nicht für das "
 #~ "Wurzeldateisystem benötigt werden) später während des Bootvorgangs zu "
 #~ "starten. Damit haben Sie größere Kontrolle über die Verbünde mit Hilfe "
-#~ "der Mdadm-Konfigurationsdatei. Es ist jedoch sicherer, alle Verbünde beim "
-#~ "Booten zu starten."
+#~ "der Mdadm-Konfigurationsdatei. Es ist jedoch sicherer, alle Verbünde "
+#~ "beim Booten zu starten."
 
 #~ msgid ""
 #~ "If RAID devices are started automatically, all RAID devices are "
