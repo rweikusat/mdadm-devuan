@@ -7,6 +7,16 @@
 # Even minor modifications require translation updates and such
 # changes should be coordinated with translators and reviewers.
 
+Template: mdadm/init-system-not-systemd
+Type: note
+_Description: no systemd init-system detected
+ The root filesystem of this system was detected to be on a RAID device,
+ so mdadm might be required to run during boot to properly start your system.
+ .
+ Beginning with newer versions of the mdadm package, init-system integration
+ is available for systemd only. This system seems to use an alternative
+ init-system which might or might not leave your system unbootable.
+
 Template: mdadm/autocheck
 Type: boolean
 Default: true
