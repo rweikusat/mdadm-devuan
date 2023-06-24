@@ -1,3 +1,14 @@
+mdadm (4.2+20230508-3) experimental; urgency=medium
+
+  * Uploading to experimental.
+  * Updating regex in logcheck ignore patterns for kernels md tunining
+    message (LP: #1176560).
+  * Adding debconf note when run on non-systemd systems (Closes:
+    #1037496).
+  * Updating debconf po files.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Sat, 24 Jun 2023 07:03:53 +0200
+
 mdadm (4.2+20230508-2) sid; urgency=medium
 
   * Uploading to sid.
