@@ -1,3 +1,12 @@
+mdadm (4.2+20230508-5) sid; urgency=medium
+
+  * Uploading to sid.
+  * Updating package descriptions.
+  * Adding updated Romanian debconf translations from Remus-Gabriel Chelu
+    <remusgabriel.chelu@disroot.org> (Closes: #1039620).
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Fri, 30 Jun 2023 10:07:14 +0200
+
 mdadm (4.2+20230508-4) sid; urgency=medium
 
   * Uploading to sid.
