@@ -2,5 +2,6 @@ Tests: test-installed
 Restrictions: needs-root, isolation-machine
 Depends:
  fdisk,
+ kmod,
  mdadm,
  udev,
