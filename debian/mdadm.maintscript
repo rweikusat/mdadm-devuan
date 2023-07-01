@@ -1,2 +1,0 @@
-rm_conffile /etc/init.d/mdadm 4.2+20230227-1~
-rm_conffile /etc/init.d/mdadm-waitidle 4.2+20230227-1~
