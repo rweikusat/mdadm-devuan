@@ -1,3 +1,16 @@
+mdadm (4.2+20230508-5devuan1) unstable; urgency=medium
+
+  * Fork for Devuan.
+  * Revert "Adding debconf note when run on non-systemd systems."
+  * Revert "Removing cron jobs in favour of systemd timers."
+  * Revert "Removing sysvinit scripts in favour of systemd units."
+    (Closes: #762).
+  * Fixup lintian override for init.d-script-possible-missing-stop.
+  * Remove unused lintian override systemd-service-file-missing-install-key.
+  * d/t/control: add missing kmod dependency.
+
+ -- Mark Hindley <mark@hindley.org.uk>  Sat, 01 Jul 2023 09:54:13 +0100
+
 mdadm (4.2+20230508-5) sid; urgency=medium
 
   * Uploading to sid.
