@@ -1,15 +1,16 @@
 Source: mdadm
 Section: admin
 Priority: optional
-Maintainer: Daniel Baumann <daniel.baumann@progress-linux.org>
+Maintainer: Mark Hindley <mark@hindley.org.uk>
 Build-Depends:
  debhelper-compat (= 13),
  libudev-dev,
 Rules-Requires-Root: no
 Standards-Version: 4.6.2
 Homepage: https://raid.wiki.kernel.org
-Vcs-Browser: https://git.progress-linux.org/users/daniel.baumann/debian/packages/mdadm
-Vcs-Git: https://git.progress-linux.org/users/daniel.baumann/debian/packages/mdadm
+Vcs-Browser: https://git.devuan.org/devuan/mdadm
+Vcs-Git: https://git.devuan.org/devuan/mdadm
+Origin: Devuan
 
 Package: mdadm
 Section: admin
