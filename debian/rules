@@ -31,6 +31,3 @@ override_dh_install:
 
 	mkdir -p $(CURDIR)/debian/mdadm/etc/mdadm
 	chmod +x $(CURDIR)/debian/mdadm/usr/share/mdadm/mdcheck
-
-override_dh_installsystemd:
-	dh_installsystemd -pmdadm mdcheck_continue.timer mdcheck_start.timer mdmonitor-oneshot.timer

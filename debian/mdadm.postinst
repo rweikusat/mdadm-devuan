@@ -76,7 +76,7 @@ AUTOCHECK=$AUTOCHECK
 
 # AUTOSCAN:
 #   should mdadm check once a day for degraded arrays? See
-#   /lib/systemd/system/mdmonitor-oneshot.service
+#   /etc/cron.daily/mdadm.
 AUTOSCAN=$AUTOSCAN
 
 # START_DAEMON:
