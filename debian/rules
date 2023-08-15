@@ -25,6 +25,13 @@ export CONFFILE2="/etc/mdadm.conf"
 %:
 	dh $@
 
+execute_after_dh_auto_clean:
+	# remove generated files
+	for file in $$(find . -type f -name "*.in"); \
+	do \
+		rm -f "$$(dirname "$${file}")"/"$$(basename "$${file}" .in)"; \
+	done
+
 override_dh_install:
 	$(MAKE) install-systemd DESTDIR=$(CURDIR)/debian/tmp
 	dh_install

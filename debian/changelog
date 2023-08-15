@@ -1,3 +1,11 @@
+mdadm (4.2+20230508-7) sid; urgency=medium
+
+  * Uploading to sid.
+  * Removing generated files to fix FTBFS when build twice in a row
+    (Closes: #1047538).
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Mon, 14 Aug 2023 11:51:05 +0200
+
 mdadm (4.2+20230508-6devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.2+20230508-6.
