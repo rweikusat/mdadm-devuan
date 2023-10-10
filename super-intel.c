@@ -499,8 +499,15 @@ struct intel_disk {
 	struct intel_disk *next;
 };
 
+/**
+ * struct extent - reserved space details.
+ * @start: start offset.
+ * @size: size of reservation, set to 0 for metadata reservation.
+ * @vol: index of the volume, meaningful if &size is set.
+ */
 struct extent {
 	unsigned long long start, size;
+	int vol;
 };
 
 /* definitions of reshape process types */
@@ -649,6 +656,11 @@ static int check_no_platform(void)
 	if (fp) {
 		char *l = conf_line(fp);
 		char *w = l;
+
+		if (l == NULL) {
+			fclose(fp);
+			return 0;
+		}
 
 		do {
 			if (strcmp(w, search) == 0)
@@ -1534,9 +1546,10 @@ static struct extent *get_extents(struct intel_super *super, struct dl *dl,
 				  int get_minimal_reservation)
 {
 	/* find a list of used extents on the given physical device */
-	struct extent *rv, *e;
-	int i;
 	int memberships = count_memberships(dl, super);
+	struct extent *rv = xcalloc(memberships + 1, sizeof(struct extent));
+	struct extent *e = rv;
+	int i;
 	__u32 reservation;
 
 	/* trim the reserved area for spares, so they can join any array
@@ -1548,9 +1561,6 @@ static struct extent *get_extents(struct intel_super *super, struct dl *dl,
 	else
 		reservation = MPB_SECTOR_CNT + IMSM_RESERVED_SECTORS;
 
-	rv = xcalloc(sizeof(struct extent), (memberships + 1));
-	e = rv;
-
 	for (i = 0; i < super->anchor->num_raid_devs; i++) {
 		struct imsm_dev *dev = get_imsm_dev(super, i);
 		struct imsm_map *map = get_imsm_map(dev, MAP_0);
@@ -1558,6 +1568,7 @@ static struct extent *get_extents(struct intel_super *super, struct dl *dl,
 		if (get_imsm_disk_slot(map, dl->index) >= 0) {
 			e->start = pba_of_lba0(map);
 			e->size = per_dev_array_size(map);
+			e->vol = i;
 			e++;
 		}
 	}
@@ -1639,17 +1650,29 @@ static int is_journal(struct imsm_disk *disk)
 	return (disk->status & JOURNAL_DISK) == JOURNAL_DISK;
 }
 
-/* round array size down to closest MB and ensure it splits evenly
- * between members
+/**
+ * round_member_size_to_mb()- Round given size to closest MiB.
+ * @size: size to round in sectors.
  */
-static unsigned long long round_size_to_mb(unsigned long long size, unsigned int
-					   disk_count)
+static inline unsigned long long round_member_size_to_mb(unsigned long long size)
 {
-	size /= disk_count;
-	size = (size >> SECT_PER_MB_SHIFT) << SECT_PER_MB_SHIFT;
-	size *= disk_count;
+	return (size >> SECT_PER_MB_SHIFT) << SECT_PER_MB_SHIFT;
+}
 
-	return size;
+/**
+ * round_size_to_mb()- Round given size.
+ * @array_size: size to round in sectors.
+ * @disk_count: count of data members.
+ *
+ * Get size per each data member and round it to closest MiB to ensure that data
+ * splits evenly between members.
+ *
+ * Return: Array size, rounded down.
+ */
+static inline unsigned long long round_size_to_mb(unsigned long long array_size,
+						  unsigned int disk_count)
+{
+	return round_member_size_to_mb(array_size / disk_count) * disk_count;
 }
 
 static int able_to_resync(int raid_level, int missing_disks)
@@ -2649,9 +2672,14 @@ static void print_imsm_capability(const struct imsm_orom *orom)
 	else
 		printf("Rapid Storage Technology%s\n",
 			imsm_orom_is_enterprise(orom) ? " enterprise" : "");
-	if (orom->major_ver || orom->minor_ver || orom->hotfix_ver || orom->build)
-		printf("        Version : %d.%d.%d.%d\n", orom->major_ver,
-				orom->minor_ver, orom->hotfix_ver, orom->build);
+	if (orom->major_ver || orom->minor_ver || orom->hotfix_ver || orom->build) {
+		if (imsm_orom_is_vmd_without_efi(orom))
+			printf("        Version : %d.%d\n", orom->major_ver,
+			       orom->minor_ver);
+		else
+			printf("        Version : %d.%d.%d.%d\n", orom->major_ver,
+			       orom->minor_ver, orom->hotfix_ver, orom->build);
+	}
 	printf("    RAID Levels :%s%s%s%s%s\n",
 	       imsm_orom_has_raid0(orom) ? " raid0" : "",
 	       imsm_orom_has_raid1(orom) ? " raid1" : "",
@@ -6877,20 +6905,35 @@ static unsigned long long find_size(struct extent *e, int *idx, int num_extents)
 	return end - base_start;
 }
 
-static unsigned long long merge_extents(struct intel_super *super, int sum_extents)
+/** merge_extents() - analyze extents and get free size.
+ * @super: Intel metadata, not NULL.
+ * @expanding: if set, we are expanding &super->current_vol.
+ *
+ * Build a composite disk with all known extents and generate a size given the
+ * "all disks in an array must share a common start offset" constraint.
+ * If a volume is expanded, then return free space after the volume.
+ *
+ * Return: Free space or 0 on failure.
+ */
+static unsigned long long merge_extents(struct intel_super *super, const bool expanding)
 {
-	/* build a composite disk with all known extents and generate a new
-	 * 'maxsize' given the "all disks in an array must share a common start
-	 * offset" constraint
-	 */
-	struct extent *e = xcalloc(sum_extents, sizeof(*e));
+	struct extent *e;
 	struct dl *dl;
-	int i, j;
-	int start_extent;
-	unsigned long long pos;
+	int i, j, pos_vol_idx = -1;
+	int extent_idx = 0;
+	int sum_extents = 0;
+	unsigned long long pos = 0;
 	unsigned long long start = 0;
-	unsigned long long maxsize;
-	unsigned long reserve;
+	unsigned long long free_size = 0;
+
+	unsigned long pre_reservation = 0;
+	unsigned long post_reservation = IMSM_RESERVED_SECTORS;
+	unsigned long reservation_size;
+
+	for (dl = super->disks; dl; dl = dl->next)
+		if (dl->e)
+			sum_extents += dl->extent_cnt;
+	e = xcalloc(sum_extents, sizeof(struct extent));
 
 	/* coalesce and sort all extents. also, check to see if we need to
 	 * reserve space between member arrays
@@ -6909,50 +6952,57 @@ static unsigned long long merge_extents(struct intel_super *super, int sum_exten
 	j = 0;
 	while (i < sum_extents) {
 		e[j].start = e[i].start;
+		e[j].vol = e[i].vol;
 		e[j].size = find_size(e, &i, sum_extents);
 		j++;
 		if (e[j-1].size == 0)
 			break;
 	}
 
-	pos = 0;
-	maxsize = 0;
-	start_extent = 0;
 	i = 0;
 	do {
-		unsigned long long esize;
+		unsigned long long esize = e[i].start - pos;
 
-		esize = e[i].start - pos;
-		if (esize >= maxsize) {
-			maxsize = esize;
+		if (expanding ? pos_vol_idx == super->current_vol : esize >= free_size) {
+			free_size = esize;
 			start = pos;
-			start_extent = i;
+			extent_idx = i;
 		}
+
 		pos = e[i].start + e[i].size;
+		pos_vol_idx = e[i].vol;
+
 		i++;
 	} while (e[i-1].size);
+
+	if (free_size == 0) {
+		dprintf("imsm: Cannot find free size.\n");
+		free(e);
+		return 0;
+	}
+
+	if (!expanding && extent_idx != 0)
+		/*
+		 * Not a real first volume in a container is created, pre_reservation is needed.
+		 */
+		pre_reservation = IMSM_RESERVED_SECTORS;
+
+	if (e[extent_idx].size == 0)
+		/*
+		 * extent_idx points to the metadata, post_reservation is allready done.
+		 */
+		post_reservation = 0;
 	free(e);
 
-	if (maxsize == 0)
+	reservation_size = pre_reservation + post_reservation;
+
+	if (free_size < reservation_size) {
+		dprintf("imsm: Reservation size is greater than free space.\n");
 		return 0;
+	}
 
-	/* FIXME assumes volume at offset 0 is the first volume in a
-	 * container
-	 */
-	if (start_extent > 0)
-		reserve = IMSM_RESERVED_SECTORS; /* gap between raid regions */
-	else
-		reserve = 0;
-
-	if (maxsize < reserve)
-		return 0;
-
-	super->create_offset = ~((unsigned long long) 0);
-	if (start + reserve > super->create_offset)
-		return 0; /* start overflows create_offset */
-	super->create_offset = start + reserve;
-
-	return maxsize - reserve;
+	super->create_offset = start + pre_reservation;
+	return free_size - reservation_size;
 }
 
 static int is_raid_level_supported(const struct imsm_orom *orom, int level, int raiddisks)
@@ -6998,7 +7048,7 @@ active_arrays_by_format(char *name, char* hba, struct md_list **devlist,
 			int fd = -1;
 			while (dev && !is_fd_valid(fd)) {
 				char *path = xmalloc(strlen(dev->name) + strlen("/dev/") + 1);
-				num = sprintf(path, "%s%s", "/dev/", dev->name);
+				num = snprintf(path, PATH_MAX, "%s%s", "/dev/", dev->name);
 				if (num > 0)
 					fd = open(path, O_RDONLY, 0);
 				if (num <= 0 || !is_fd_valid(fd)) {
@@ -7550,13 +7600,7 @@ static int validate_geometry_imsm_volume(struct supertype *st, int level,
 		return 0;
 	}
 
-	/* count total number of extents for merge */
-	i = 0;
-	for (dl = super->disks; dl; dl = dl->next)
-		if (dl->e)
-			i += dl->extent_cnt;
-
-	maxsize = merge_extents(super, i);
+	maxsize = merge_extents(super, false);
 
 	if (mpb->num_raid_devs > 0 && size && size != maxsize)
 		pr_err("attempting to create a second volume with size less then remaining space.\n");
@@ -7591,7 +7635,7 @@ static int validate_geometry_imsm_volume(struct supertype *st, int level,
  * @super: &intel_super pointer, not NULL.
  * @raiddisks: number of raid disks.
  * @size: requested size, could be 0 (means max size).
- * @chunk: requested chunk.
+ * @chunk: requested chunk size in KiB.
  * @freesize: pointer for returned size value.
  *
  * Return: &IMSM_STATUS_OK or &IMSM_STATUS_ERROR.
@@ -7605,22 +7649,22 @@ static imsm_status_t imsm_get_free_size(struct intel_super *super,
 					const int raiddisks,
 					unsigned long long size,
 					const int chunk,
-					unsigned long long *freesize)
+					unsigned long long *freesize,
+					bool expanding)
 {
 	struct imsm_super *mpb = super->anchor;
 	struct dl *dl;
 	int i;
-	int extent_cnt;
 	struct extent *e;
+	int cnt = 0;
+	int used = 0;
 	unsigned long long maxsize;
-	unsigned long long minsize;
-	int cnt;
-	int used;
+	unsigned long long minsize = size;
+
+	if (minsize == 0)
+		minsize = chunk * 2;
 
 	/* find the largest common start free region of the possible disks */
-	used = 0;
-	extent_cnt = 0;
-	cnt = 0;
 	for (dl = super->disks; dl; dl = dl->next) {
 		dl->raiddisk = -1;
 
@@ -7640,19 +7684,18 @@ static imsm_status_t imsm_get_free_size(struct intel_super *super,
 			;
 		dl->e = e;
 		dl->extent_cnt = i;
-		extent_cnt += i;
 		cnt++;
 	}
 
-	maxsize = merge_extents(super, extent_cnt);
-	minsize = size;
-	if (size == 0)
-		/* chunk is in K */
-		minsize = chunk * 2;
+	maxsize = merge_extents(super, expanding);
+	if (maxsize < minsize)  {
+		pr_err("imsm: Free space is %llu but must be equal or larger than %llu.\n",
+		       maxsize, minsize);
+		return IMSM_STATUS_ERROR;
+	}
 
-	if (cnt < raiddisks || (super->orom && used && used != raiddisks) ||
-	    maxsize < minsize || maxsize == 0) {
-		pr_err("not enough devices with space to create array.\n");
+	if (cnt < raiddisks || (super->orom && used && used != raiddisks)) {
+		pr_err("imsm: Not enough devices with space to create array.\n");
 		return IMSM_STATUS_ERROR;
 	}
 
@@ -7702,7 +7745,7 @@ static imsm_status_t autolayout_imsm(struct intel_super *super,
 	int vol_cnt = super->anchor->num_raid_devs;
 	imsm_status_t rv;
 
-	rv = imsm_get_free_size(super, raiddisks, size, chunk, freesize);
+	rv = imsm_get_free_size(super, raiddisks, size, chunk, freesize, false);
 	if (rv != IMSM_STATUS_OK)
 		return IMSM_STATUS_ERROR;
 
@@ -7897,7 +7940,7 @@ static int kill_subarray_imsm(struct supertype *st, char *subarray_id)
 
 		if (i < current_vol)
 			continue;
-		sprintf(subarray, "%u", i);
+		snprintf(subarray, sizeof(subarray), "%u", i);
 		if (is_subarray_active(subarray, st->devnm)) {
 			pr_err("deleting subarray-%d would change the UUID of active subarray-%d, aborting\n",
 			       current_vol, i);
@@ -11270,7 +11313,7 @@ static const char *imsm_get_disk_controller_domain(const char *path)
 	char *drv=NULL;
 	struct stat st;
 
-	strcpy(disk_path, disk_by_path);
+	strncpy(disk_path, disk_by_path, PATH_MAX);
 	strncat(disk_path, path, PATH_MAX - strlen(disk_path) - 1);
 	if (stat(disk_path, &st) == 0) {
 		struct sys_dev* hba;
@@ -11624,6 +11667,96 @@ static void imsm_update_metadata_locally(struct supertype *st,
 	}
 }
 
+/**
+ * imsm_analyze_expand() - check expand properties and calculate new size.
+ * @st: imsm supertype.
+ * @geo: new geometry params.
+ * @array: array info.
+ * @direction: reshape direction.
+ *
+ * Obtain free space after the &array and verify if expand to requested size is
+ * possible. If geo->size is set to %MAX_SIZE, assume that max free size is
+ * requested.
+ *
+ * Return:
+ * On success %IMSM_STATUS_OK is returned, geo->size and geo->raid_disks are
+ * updated.
+ * On error, %IMSM_STATUS_ERROR is returned.
+ */
+static imsm_status_t imsm_analyze_expand(struct supertype *st,
+					 struct geo_params *geo,
+					 struct mdinfo *array,
+					 int direction)
+{
+	struct intel_super *super = st->sb;
+	struct imsm_dev *dev = get_imsm_dev(super, super->current_vol);
+	struct imsm_map *map = get_imsm_map(dev, MAP_0);
+	int data_disks = imsm_num_data_members(map);
+
+	unsigned long long current_size;
+	unsigned long long free_size;
+	unsigned long long new_size;
+	unsigned long long max_size;
+
+	const int chunk_kib = geo->chunksize / 1024;
+	imsm_status_t rv;
+
+	if (direction == ROLLBACK_METADATA_CHANGES) {
+		/**
+		 * Accept size for rollback only.
+		 */
+		new_size = geo->size * 2;
+		goto success;
+	}
+
+	if (data_disks == 0) {
+		pr_err("imsm: Cannot retrieve data disks.\n");
+		return IMSM_STATUS_ERROR;
+	}
+	current_size = array->custom_array_size / data_disks;
+
+	rv = imsm_get_free_size(super, dev->vol.map->num_members, 0, chunk_kib, &free_size, true);
+	if (rv != IMSM_STATUS_OK) {
+		pr_err("imsm: Cannot find free space for expand.\n");
+		return IMSM_STATUS_ERROR;
+	}
+	max_size = round_member_size_to_mb(free_size + current_size);
+
+	if (geo->size == MAX_SIZE)
+		new_size = max_size;
+	else
+		new_size = round_member_size_to_mb(geo->size * 2);
+
+	if (new_size == 0) {
+		pr_err("imsm: Rounded requested size is 0.\n");
+		return IMSM_STATUS_ERROR;
+	}
+
+	if (new_size > max_size) {
+		pr_err("imsm: Rounded requested size (%llu) is larger than free space available (%llu).\n",
+		       new_size, max_size);
+		return IMSM_STATUS_ERROR;
+	}
+
+	if (new_size == current_size) {
+		pr_err("imsm: Rounded requested size (%llu) is same as current size (%llu).\n",
+		       new_size, current_size);
+		return IMSM_STATUS_ERROR;
+	}
+
+	if (new_size < current_size) {
+		pr_err("imsm: Size reduction is not supported, rounded requested size (%llu) is smaller than current (%llu).\n",
+		       new_size, current_size);
+		return IMSM_STATUS_ERROR;
+	}
+
+success:
+	dprintf("imsm: New size per member is %llu.\n", new_size);
+	geo->size = data_disks * new_size;
+	geo->raid_disks = dev->vol.map->num_members;
+	return IMSM_STATUS_OK;
+}
+
 /***************************************************************************
 * Function:	imsm_analyze_change
 * Description:	Function analyze change for single volume
@@ -11644,13 +11777,6 @@ enum imsm_reshape_type imsm_analyze_change(struct supertype *st,
 	int devNumChange = 0;
 	/* imsm compatible layout value for array geometry verification */
 	int imsm_layout = -1;
-	int data_disks;
-	struct imsm_dev *dev;
-	struct imsm_map *map;
-	struct intel_super *super;
-	unsigned long long current_size;
-	unsigned long long free_size;
-	unsigned long long max_size;
 	imsm_status_t rv;
 
 	getinfo_super_imsm_volume(st, &info, NULL);
@@ -11733,95 +11859,20 @@ enum imsm_reshape_type imsm_analyze_change(struct supertype *st,
 		geo->chunksize = info.array.chunk_size;
 	}
 
-	chunk = geo->chunksize / 1024;
-
-	super = st->sb;
-	dev = get_imsm_dev(super, super->current_vol);
-	map = get_imsm_map(dev, MAP_0);
-	data_disks = imsm_num_data_members(map);
-	/* compute current size per disk member
-	 */
-	current_size = info.custom_array_size / data_disks;
-
-	if (geo->size > 0 && geo->size != MAX_SIZE) {
-		/* align component size
-		 */
-		geo->size = imsm_component_size_alignment_check(
-				    get_imsm_raid_level(dev->vol.map),
-				    chunk * 1024, super->sector_size,
-				    geo->size * 2);
-		if (geo->size == 0) {
-			pr_err("Error. Size expansion is supported only (current size is %llu, requested size /rounded/ is 0).\n",
-				   current_size);
-			goto analyse_change_exit;
-		}
-	}
-
-	if (current_size != geo->size && geo->size > 0) {
+	if (geo->size > 0) {
 		if (change != -1) {
 			pr_err("Error. Size change should be the only one at a time.\n");
 			change = -1;
 			goto analyse_change_exit;
 		}
-		if ((super->current_vol + 1) != super->anchor->num_raid_devs) {
-			pr_err("Error. The last volume in container can be expanded only (%i/%s).\n",
-			       super->current_vol, st->devnm);
-			goto analyse_change_exit;
-		}
-		/* check the maximum available size
-		 */
-		rv = imsm_get_free_size(super, dev->vol.map->num_members,
-					0, chunk, &free_size);
 
+		rv = imsm_analyze_expand(st, geo, &info, direction);
 		if (rv != IMSM_STATUS_OK)
-			/* Cannot find maximum available space
-			 */
-			max_size = 0;
-		else {
-			max_size = free_size + current_size;
-			/* align component size
-			 */
-			max_size = imsm_component_size_alignment_check(
-					get_imsm_raid_level(dev->vol.map),
-					chunk * 1024, super->sector_size,
-					max_size);
-		}
-		if (geo->size == MAX_SIZE) {
-			/* requested size change to the maximum available size
-			 */
-			if (max_size == 0) {
-				pr_err("Error. Cannot find maximum available space.\n");
-				change = -1;
-				goto analyse_change_exit;
-			} else
-				geo->size = max_size;
-		}
-
-		if (direction == ROLLBACK_METADATA_CHANGES) {
-			/* accept size for rollback only
-			*/
-		} else {
-			/* round size due to metadata compatibility
-			*/
-			geo->size = (geo->size >> SECT_PER_MB_SHIFT)
-				    << SECT_PER_MB_SHIFT;
-			dprintf("Prepare update for size change to %llu\n",
-				geo->size );
-			if (current_size >= geo->size) {
-				pr_err("Error. Size expansion is supported only (current size is %llu, requested size /rounded/ is %llu).\n",
-				       current_size, geo->size);
-				goto analyse_change_exit;
-			}
-			if (max_size && geo->size > max_size) {
-				pr_err("Error. Requested size is larger than maximum available size (maximum available size is %llu, requested size /rounded/ is %llu).\n",
-				       max_size, geo->size);
-				goto analyse_change_exit;
-			}
-		}
-		geo->size *= data_disks;
-		geo->raid_disks = dev->vol.map->num_members;
+			goto analyse_change_exit;
 		change = CH_ARRAY_SIZE;
 	}
+
+	chunk = geo->chunksize / 1024;
 	if (!validate_geometry_imsm(st,
 				    geo->level,
 				    imsm_layout,
