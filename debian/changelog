@@ -1,3 +1,10 @@
+mdadm (4.2+20230901-1) sid; urgency=medium
+
+  * Uploading to sid.
+  * Merging upstream version 4.2+20230901.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Tue, 10 Oct 2023 10:48:43 +0200
+
 mdadm (4.2+20230508-7devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.2+20230508-7.
