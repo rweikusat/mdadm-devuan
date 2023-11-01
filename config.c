@@ -122,13 +122,41 @@ int match_keyword(char *word)
 /**
  * is_devname_ignore() - check if &devname is a special "<ignore>" keyword.
  */
-bool is_devname_ignore(char *devname)
+bool is_devname_ignore(const char *devname)
 {
 	static const char keyword[] = "<ignore>";
 
 	if (strcasecmp(devname, keyword) == 0)
 		return true;
 	return false;
+}
+
+/**
+ * ident_log() - generate and write message to the user.
+ * @param_name: name of the property.
+ * @value: value of the property.
+ * @reason: meaningful description.
+ * @cmdline: context dependent actions, see below.
+ *
+ * The function is made to provide similar error handling for both config and cmdline. The behavior
+ * is configurable via @cmdline. Message has following format:
+ * "Value "@value" cannot be set for @param_name. Reason: @reason."
+ *
+ * If cmdline is on:
+ * - message is written to stderr.
+ * otherwise:
+ * - message is written to stdout.
+ * - "Value ignored" is added at the end of the message.
+ */
+static void ident_log(const char *param_name, const char *value, const char *reason,
+		      const bool cmdline)
+{
+	if (cmdline == true)
+		pr_err("Value \"%s\" cannot be set as %s. Reason: %s.\n", value, param_name,
+		       reason);
+	else
+		pr_info("Value \"%s\" cannot be set as %s. Reason: %s. Value ignored.\n", value,
+			param_name, reason);
 }
 
 /**
@@ -157,6 +185,127 @@ inline void ident_init(struct mddev_ident *ident)
 	ident->super_minor = UnSet;
 	ident->uuid[0] = 0;
 	ident->uuid_set = 0;
+}
+
+/**
+ * _ident_set_devname()- verify devname and set it in &mddev_ident.
+ * @ident: pointer to &mddev_ident.
+ * @devname: devname to be set.
+ * @cmdline: context dependent actions. If set, ignore keyword is not allowed.
+ *
+ * @devname can have following forms:
+ *	'<ignore>' keyword (if allowed)
+ *	/dev/md{number}
+ *	/dev/md_d{number} (legacy)
+ *	/dev/md_{name}
+ *	/dev/md/{name}
+ *	{name}
+ *
+ * {name} must follow name's criteria and be POSIX compatible.
+ * If criteria passed, duplicate memory and set devname in @ident.
+ *
+ * Return: %MDADM_STATUS_SUCCESS or %MDADM_STATUS_ERROR.
+ */
+mdadm_status_t _ident_set_devname(struct mddev_ident *ident, const char *devname,
+				  const bool cmdline)
+{
+	assert(ident);
+	assert(devname);
+
+	static const char named_dev_pref[] = DEV_NUM_PREF "_";
+	static const int named_dev_pref_size = sizeof(named_dev_pref) - 1;
+	const char *prop_name = "devname";
+	const char *name;
+
+	if (ident->devname) {
+		ident_log(prop_name, devname, "Already defined", cmdline);
+		return MDADM_STATUS_ERROR;
+	}
+
+	if (is_devname_ignore(devname) == true) {
+		if (!cmdline)
+			goto pass;
+
+		ident_log(prop_name, devname, "Special keyword is invalid in this context",
+			  cmdline);
+		return MDADM_STATUS_ERROR;
+	}
+
+	if (is_devname_md_numbered(devname) == true || is_devname_md_d_numbered(devname) == true)
+		goto pass;
+
+	if (strncmp(devname, DEV_MD_DIR, DEV_MD_DIR_LEN) == 0)
+		name = devname + DEV_MD_DIR_LEN;
+	else if (strncmp(devname, named_dev_pref, named_dev_pref_size) == 0)
+		name = devname + named_dev_pref_size;
+	else
+		name = devname;
+
+	if (is_name_posix_compatible(name) == false) {
+		ident_log(prop_name, name, "Not POSIX compatible", cmdline);
+		return MDADM_STATUS_ERROR;
+	}
+
+	if (is_string_lq(name, MD_NAME_MAX + 1) == false) {
+		ident_log(prop_name, devname, "Invalid length", cmdline);
+		return MDADM_STATUS_ERROR;
+	}
+pass:
+	ident->devname = xstrdup(devname);
+	return MDADM_STATUS_SUCCESS;
+}
+
+/**
+ * _ident_set_name()- set name in &mddev_ident.
+ * @ident: pointer to &mddev_ident.
+ * @name: name to be set.
+ * @cmdline: context dependent actions.
+ *
+ * If criteria passed, set name in @ident.
+ *
+ * Return: %MDADM_STATUS_SUCCESS or %MDADM_STATUS_ERROR.
+ */
+static mdadm_status_t _ident_set_name(struct mddev_ident *ident, const char *name,
+				      const bool cmdline)
+{
+	assert(name);
+	assert(ident);
+
+	const char *prop_name = "name";
+
+	if (ident->name[0]) {
+		ident_log(prop_name, name, "Already defined", cmdline);
+		return MDADM_STATUS_ERROR;
+	}
+
+	if (is_string_lq(name, MD_NAME_MAX + 1) == false) {
+		ident_log(prop_name, name, "Too long or empty", cmdline);
+		return MDADM_STATUS_ERROR;
+	}
+
+	if (is_name_posix_compatible(name) == false) {
+		ident_log(prop_name, name, "Not POSIX compatible", cmdline);
+		return MDADM_STATUS_ERROR;
+	}
+
+	snprintf(ident->name, MD_NAME_MAX + 1, "%s", name);
+	return MDADM_STATUS_SUCCESS;
+}
+
+/**
+ * ident_set_devname()- exported, for cmdline.
+ */
+mdadm_status_t ident_set_devname(struct mddev_ident *ident, const char *name)
+{
+	return _ident_set_devname(ident, name, true);
+}
+
+/**
+ * ident_set_name()- exported, for cmdline.
+ */
+mdadm_status_t ident_set_name(struct mddev_ident *ident, const char *name)
+{
+	return _ident_set_name(ident, name, true);
 }
 
 struct conf_dev {
@@ -396,29 +545,7 @@ void arrayline(char *line)
 
 	for (w = dl_next(line); w != line; w = dl_next(w)) {
 		if (w[0] == '/' || strchr(w, '=') == NULL) {
-			/* This names the device, or is '<ignore>'.
-			 * The rules match those in create_mddev.
-			 * 'w' must be:
-			 *  /dev/md/{anything}
-			 *  /dev/mdNN
-			 *  /dev/md_dNN
-			 *  <ignore>
-			 *  or anything that doesn't start '/' or '<'
-			 */
-			if (is_devname_ignore(w) == true ||
-			    strncmp(w, DEV_MD_DIR, DEV_MD_DIR_LEN) == 0 ||
-			    (w[0] != '/' && w[0] != '<') ||
-			    is_devname_md_numbered(w) == true ||
-			    is_devname_md_d_numbered(w) == true) {
-				/* This is acceptable */;
-				if (mis.devname)
-					pr_err("only give one device per ARRAY line: %s and %s\n",
-						mis.devname, w);
-				else
-					mis.devname = w;
-			}else {
-				pr_err("%s is an invalid name for an md device - ignored.\n", w);
-			}
+			_ident_set_devname(&mis, w, false);
 		} else if (strncasecmp(w, "uuid=", 5) == 0) {
 			if (mis.uuid_set)
 				pr_err("only specify uuid once, %s ignored.\n",
@@ -444,14 +571,7 @@ void arrayline(char *line)
 					mis.super_minor = minor;
 			}
 		} else if (strncasecmp(w, "name=", 5) == 0) {
-			if (mis.name[0])
-				pr_err("only specify name once, %s ignored.\n",
-					w);
-			else if (strlen(w + 5) > 32)
-				pr_err("name too long, ignoring %s\n", w);
-			else
-				strcpy(mis.name, w + 5);
-
+			_ident_set_name(&mis, w + 5, false);
 		} else if (strncasecmp(w, "bitmap=", 7) == 0) {
 			if (mis.bitmap_file)
 				pr_err("only specify bitmap file once. %s ignored\n",

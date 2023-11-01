@@ -341,8 +341,10 @@ static int select_devices(struct mddev_dev *devlist,
 				st->ss->free_super(st);
 			dev_policy_free(pol);
 			domain_free(domains);
-			if (tst)
+			if (tst) {
 				tst->ss->free_super(tst);
+				free(tst);
+			}
 			return -1;
 		}
 
@@ -417,6 +419,7 @@ static int select_devices(struct mddev_dev *devlist,
 				st->ss->free_super(st);
 				dev_policy_free(pol);
 				domain_free(domains);
+				free(st);
 				return -1;
 			}
 			if (c->verbose > 0)
@@ -533,6 +536,7 @@ static int select_devices(struct mddev_dev *devlist,
 				st->ss->free_super(st);
 				dev_policy_free(pol);
 				domain_free(domains);
+				free(tst);
 				return -1;
 			}
 			tmpdev->used = 1;
@@ -546,8 +550,10 @@ static int select_devices(struct mddev_dev *devlist,
 		}
 		dev_policy_free(pol);
 		pol = NULL;
-		if (tst)
+		if (tst) {
 			tst->ss->free_super(tst);
+			free(tst);
+		}
 	}
 
 	/* Check if we found some imsm spares but no members */
@@ -839,6 +845,7 @@ static int load_devices(struct devs *devices, char *devmap,
 				close(mdfd);
 				free(devices);
 				free(devmap);
+				free(best);
 				*stp = st;
 				return -1;
 			}
@@ -1950,6 +1957,7 @@ out:
 	} else if (mdfd >= 0)
 		close(mdfd);
 
+	free(best);
 	/* '2' means 'OK, but not started yet' */
 	if (rv == -1) {
 		free(devices);
@@ -1982,12 +1990,10 @@ int assemble_container_content(struct supertype *st, int mdfd,
 		return 1;
 	}
 
-	if (strcmp(sra->text_version, content->text_version) != 0) {
-		if (content->array.major_version == -1 &&
-		    content->array.minor_version == -2 &&
-		    c->readonly &&
-		    content->text_version[0] == '/')
-			content->text_version[0] = '-';
+	/* Fill sysfs properties only if they are not set. Determine it by checking text_version
+	 * and ignoring special character on the first place.
+	 */
+	if (strcmp(sra->text_version + 1, content->text_version + 1) != 0) {
 		if (sysfs_set_array(content, 9003) != 0) {
 			sysfs_free(sra);
 			return 1;

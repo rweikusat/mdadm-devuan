@@ -690,20 +690,14 @@ int main(int argc, char *argv[])
 		case O(CREATE,'N'):
 		case O(ASSEMBLE,'N'):
 		case O(MISC,'N'):
-			if (ident.name[0]) {
-				pr_err("name cannot be set twice.   Second value %s.\n", optarg);
-				exit(2);
-			}
 			if (mode == MISC && !c.subarray) {
 				pr_err("-N/--name only valid with --update-subarray in misc mode\n");
 				exit(2);
 			}
-			if (strlen(optarg) > 32) {
-				pr_err("name '%s' is too long, 32 chars max.\n",
-					optarg);
+
+			if (ident_set_name(&ident, optarg) != MDADM_STATUS_SUCCESS)
 				exit(2);
-			}
-			strcpy(ident.name, optarg);
+
 			continue;
 
 		case O(ASSEMBLE,'m'): /* super-minor for array */
@@ -1290,37 +1284,33 @@ int main(int argc, char *argv[])
 			pr_err("an md device must be given in this mode\n");
 			exit(2);
 		}
+		if (ident_set_devname(&ident, devlist->devname) != MDADM_STATUS_SUCCESS)
+			exit(1);
+
 		if ((int)ident.super_minor == -2 && c.autof) {
 			pr_err("--super-minor=dev is incompatible with --auto\n");
 			exit(2);
 		}
 		if (mode == MANAGE || mode == GROW) {
-			mdfd = open_mddev(devlist->devname, 1);
+			mdfd = open_mddev(ident.devname, 1);
 			if (mdfd < 0)
 				exit(1);
 
 			ret = fstat(mdfd, &stb);
 			if (ret) {
-				pr_err("fstat failed on %s.\n", devlist->devname);
+				pr_err("fstat failed on %s.\n", ident.devname);
 				exit(1);
 			}
 		} else {
-			char *bname = basename(devlist->devname);
-
-			if (strlen(bname) > MD_NAME_MAX) {
-				pr_err("Name %s is too long.\n", devlist->devname);
-				exit(1);
-			}
-
-			ret = stat(devlist->devname, &stb);
+			ret = stat(ident.devname, &stb);
 			if (ident.super_minor == -2 && ret != 0) {
 				pr_err("--super-minor=dev given, and listed device %s doesn't exist.\n",
-				       devlist->devname);
+				       ident.devname);
 				exit(1);
 			}
 
 			if (!ret && !stat_is_md_dev(&stb)) {
-				pr_err("device %s exists but is not an md array.\n", devlist->devname);
+				pr_err("device %s exists but is not an md array.\n", ident.devname);
 				exit(1);
 			}
 		}
@@ -1340,8 +1330,7 @@ int main(int argc, char *argv[])
 	if (c.homehost == NULL && c.require_homehost)
 		c.homehost = conf_get_homehost(&c.require_homehost);
 	if (c.homehost == NULL || strcasecmp(c.homehost, "<system>") == 0) {
-		if (gethostname(sys_hostname, sizeof(sys_hostname)) == 0) {
-			sys_hostname[sizeof(sys_hostname)-1] = 0;
+		if (s_gethostname(sys_hostname, sizeof(sys_hostname)) == 0) {
 			c.homehost = sys_hostname;
 		}
 	}
@@ -1409,17 +1398,17 @@ int main(int argc, char *argv[])
 	case MANAGE:
 		/* readonly, add/remove, readwrite, runstop */
 		if (c.readonly > 0)
-			rv = Manage_ro(devlist->devname, mdfd, c.readonly);
+			rv = Manage_ro(ident.devname, mdfd, c.readonly);
 		if (!rv && devs_found > 1)
-			rv = Manage_subdevs(devlist->devname, mdfd,
+			rv = Manage_subdevs(ident.devname, mdfd,
 					    devlist->next, c.verbose,
 					    c.test, c.update, c.force);
 		if (!rv && c.readonly < 0)
-			rv = Manage_ro(devlist->devname, mdfd, c.readonly);
+			rv = Manage_ro(ident.devname, mdfd, c.readonly);
 		if (!rv && c.runstop > 0)
-			rv = Manage_run(devlist->devname, mdfd, &c);
+			rv = Manage_run(ident.devname, mdfd, &c);
 		if (!rv && c.runstop < 0)
-			rv = Manage_stop(devlist->devname, mdfd, c.verbose, 0);
+			rv = Manage_stop(ident.devname, mdfd, c.verbose, 0);
 		break;
 	case ASSEMBLE:
 		if (!c.scan && c.runstop == -1) {
@@ -1429,22 +1418,19 @@ int main(int argc, char *argv[])
 			   ident.super_minor == UnSet && ident.name[0] == 0 &&
 			   !c.scan) {
 			/* Only a device has been given, so get details from config file */
-			struct mddev_ident *array_ident = conf_get_ident(devlist->devname);
+			struct mddev_ident *array_ident = conf_get_ident(ident.devname);
 			if (array_ident == NULL) {
-				pr_err("%s not identified in config file.\n",
-					devlist->devname);
+				pr_err("%s not identified in config file.\n", ident.devname);
 				rv |= 1;
 				if (mdfd >= 0)
 					close(mdfd);
 			} else {
 				if (array_ident->autof == 0)
 					array_ident->autof = c.autof;
-				rv |= Assemble(ss, devlist->devname, array_ident,
-					       NULL, &c);
+				rv |= Assemble(ss, ident.devname, array_ident, NULL, &c);
 			}
 		} else if (!c.scan)
-			rv = Assemble(ss, devlist->devname, &ident,
-				      devlist->next, &c);
+			rv = Assemble(ss, ident.devname, &ident, devlist->next, &c);
 		else if (devs_found > 0) {
 			if (c.update && devs_found > 1) {
 				pr_err("can only update a single array at a time\n");
@@ -1502,7 +1488,7 @@ int main(int argc, char *argv[])
 				break;
 			}
 		}
-		rv = Build(devlist->devname, devlist->next, &s, &c);
+		rv = Build(&ident, devlist->next, &s, &c);
 		break;
 	case CREATE:
 		if (c.delay == 0)
@@ -1539,9 +1525,7 @@ int main(int argc, char *argv[])
 			break;
 		}
 
-		rv = Create(ss, devlist->devname,
-			    ident.name, ident.uuid_set ? ident.uuid : NULL,
-			    devs_found - 1, devlist->next, &s, &c);
+		rv = Create(ss, &ident, devs_found - 1, devlist->next, &s, &c);
 		break;
 	case MISC:
 		if (devmode == 'E') {
@@ -1638,8 +1622,7 @@ int main(int argc, char *argv[])
 				break;
 			}
 			for (dv = devlist->next; dv; dv = dv->next) {
-				rv = Grow_Add_device(devlist->devname, mdfd,
-						     dv->devname);
+				rv = Grow_Add_device(ident.devname, mdfd, dv->devname);
 				if (rv)
 					break;
 			}
@@ -1652,18 +1635,15 @@ int main(int argc, char *argv[])
 			}
 			if (c.delay == 0)
 				c.delay = DEFAULT_BITMAP_DELAY;
-			rv = Grow_addbitmap(devlist->devname, mdfd, &c, &s);
+			rv = Grow_addbitmap(ident.devname, mdfd, &c, &s);
 		} else if (grow_continue)
-			rv = Grow_continue_command(devlist->devname,
-						   mdfd, c.backup_file,
-						   c.verbose);
+			rv = Grow_continue_command(ident.devname, mdfd, c.backup_file, c.verbose);
 		else if (s.size > 0 || s.raiddisks || s.layout_str ||
 			 s.chunk != 0 || s.level != UnSet ||
 			 s.data_offset != INVALID_SECTORS) {
-			rv = Grow_reshape(devlist->devname, mdfd,
-					  devlist->next, &c, &s);
+			rv = Grow_reshape(ident.devname, mdfd, devlist->next, &c, &s);
 		} else if (s.consistency_policy != CONSISTENCY_POLICY_UNKNOWN) {
-			rv = Grow_consistency_policy(devlist->devname, mdfd, &c, &s);
+			rv = Grow_consistency_policy(ident.devname, mdfd, &c, &s);
 		} else if (array_size == 0)
 			pr_err("no changes to --grow\n");
 		break;
@@ -1708,6 +1688,10 @@ int main(int argc, char *argv[])
 	case AUTODETECT:
 		autodetect();
 		break;
+	}
+	if (ss) {
+		ss->ss->free_super(ss);
+		free(ss);
 	}
 	if (locked)
 		cluster_release_dlmlock();

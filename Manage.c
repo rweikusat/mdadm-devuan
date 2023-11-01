@@ -222,6 +222,7 @@ int Manage_stop(char *devname, int fd, int verbose, int will_retry)
 		if (verbose >= 0)
 			pr_err("Cannot get exclusive access to %s:Perhaps a running process, mounted filesystem or active volume group?\n",
 			       devname);
+		sysfs_free(mdi);
 		return 1;
 	}
 	/* If this is an mdmon managed array, just write 'inactive'
@@ -703,6 +704,7 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 	struct supertype *dev_st;
 	int j;
 	mdu_disk_info_t disc;
+	struct map_ent *map = NULL;
 
 	if (!get_dev_size(tfd, dv->devname, &ldsize)) {
 		if (dv->disposition == 'M')
@@ -801,8 +803,14 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 						    rdev, update, devname,
 						    verbose, array);
 				dev_st->ss->free_super(dev_st);
-				if (rv)
+				if (rv) {
+					free(dev_st);
 					return rv;
+				}
+			}
+			if (dev_st) {
+				dev_st->ss->free_super(dev_st);
+				free(dev_st);
 			}
 		}
 		if (dv->disposition == 'M') {
@@ -900,6 +908,9 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 		disc.raid_disk = 0;
 	}
 
+	if (map_lock(&map))
+		pr_err("failed to get exclusive lock on mapfile when add disk\n");
+
 	if (array->not_persistent==0) {
 		int dfd;
 		if (dv->disposition == 'j')
@@ -911,9 +922,9 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 		dfd = dev_open(dv->devname, O_RDWR | O_EXCL|O_DIRECT);
 		if (tst->ss->add_to_super(tst, &disc, dfd,
 					  dv->devname, INVALID_SECTORS))
-			return -1;
+			goto unlock;
 		if (tst->ss->write_init_super(tst))
-			return -1;
+			goto unlock;
 	} else if (dv->disposition == 'A') {
 		/*  this had better be raid1.
 		 * As we are "--re-add"ing we must find a spare slot
@@ -971,14 +982,14 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 			pr_err("add failed for %s: could not get exclusive access to container\n",
 			       dv->devname);
 			tst->ss->free_super(tst);
-			return -1;
+			goto unlock;
 		}
 
 		/* Check if metadata handler is able to accept the drive */
 		if (!tst->ss->validate_geometry(tst, LEVEL_CONTAINER, 0, 1, NULL,
 		    0, 0, dv->devname, NULL, 0, 1)) {
 			close(container_fd);
-			return -1;
+			goto unlock;
 		}
 
 		Kill(dv->devname, NULL, 0, -1, 0);
@@ -987,7 +998,7 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 					  dv->devname, INVALID_SECTORS)) {
 			close(dfd);
 			close(container_fd);
-			return -1;
+			goto unlock;
 		}
 		if (!mdmon_running(tst->container_devnm))
 			tst->ss->sync_metadata(tst);
@@ -998,7 +1009,7 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 			       dv->devname);
 			close(container_fd);
 			tst->ss->free_super(tst);
-			return -1;
+			goto unlock;
 		}
 		sra->array.level = LEVEL_CONTAINER;
 		/* Need to set data_offset and component_size */
@@ -1013,7 +1024,7 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 			pr_err("add new device to external metadata failed for %s\n", dv->devname);
 			close(container_fd);
 			sysfs_free(sra);
-			return -1;
+			goto unlock;
 		}
 		ping_monitor(devnm);
 		sysfs_free(sra);
@@ -1027,7 +1038,7 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 			else
 				pr_err("add new device failed for %s as %d: %s\n",
 				       dv->devname, j, strerror(errno));
-			return -1;
+			goto unlock;
 		}
 		if (dv->disposition == 'j') {
 			pr_err("Journal added successfully, making %s read-write\n", devname);
@@ -1038,7 +1049,11 @@ int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 	}
 	if (verbose >= 0)
 		pr_err("added %s\n", dv->devname);
+	map_unlock(&map);
 	return 1;
+unlock:
+	map_unlock(&map);
+	return -1;
 }
 
 int Manage_remove(struct supertype *tst, int fd, struct mddev_dev *dv,
@@ -1362,7 +1377,7 @@ int Manage_subdevs(char *devname, int fd,
 	unsigned long long array_size;
 	struct mddev_dev *dv;
 	int tfd = -1;
-	struct supertype *tst;
+	struct supertype *tst = NULL;
 	char *subarray = NULL;
 	int sysfd = -1;
 	int count = 0; /* number of actions taken */
@@ -1699,6 +1714,7 @@ int Manage_subdevs(char *devname, int fd,
 			break;
 		}
 	}
+	free(tst);
 	if (frozen > 0)
 		sysfs_set_str(&info, NULL, "sync_action","idle");
 	if (test && count == 0)
@@ -1706,6 +1722,7 @@ int Manage_subdevs(char *devname, int fd,
 	return 0;
 
 abort:
+	free(tst);
 	if (frozen > 0)
 		sysfs_set_str(&info, NULL, "sync_action","idle");
 	return !test && busy ? 2 : 1;
