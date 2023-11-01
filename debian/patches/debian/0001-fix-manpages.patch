@@ -104,7 +104,7 @@ diff -Naurp mdadm.orig/md.4 mdadm/md.4
  If a FAILFAST request does fail, and if it is still safe to mark the
 diff -Naurp mdadm.orig/mdadm.8.in mdadm/mdadm.8.in
 --- mdadm.orig/mdadm.8.in
-+++ mdadm/mdadm.8
++++ mdadm/mdadm.8.in
 @@ -459,11 +459,10 @@ number of spare devices.
  Amount (in Kilobytes) of space to use from each drive in RAID levels 1/4/5/6/10
  and for RAID 0 on external metadata.
@@ -121,15 +121,7 @@ diff -Naurp mdadm.orig/mdadm.8.in mdadm/mdadm.8.in
  
  A suffix of 'K', 'M', 'G' or 'T' can be given to indicate Kilobytes,
  Megabytes, Gigabytes or Terabytes respectively.
-@@ -927,6 +926,7 @@ the
- .B name
- will default to
- .IR home .
-+(Does not work in Grow mode.)
- 
- .TP
- .BR \-R ", " \-\-run
-@@ -1131,7 +1131,7 @@ out-of-date.  If
+@@ -1146,7 +1145,7 @@ out-of-date.  If
  cannot find enough working devices to start the array, but can find
  some devices that are recorded as having failed, then it will mark
  those devices as working so that the array can be started. This works only for
@@ -138,7 +130,7 @@ diff -Naurp mdadm.orig/mdadm.8.in mdadm/mdadm.8.in
  An array which requires
  .B \-\-force
  to be started may contain data corruption.  Use it carefully.
-@@ -1814,7 +1814,7 @@ Details of
+@@ -1829,7 +1828,7 @@ Details of
  .B check
  and
  .B repair
@@ -147,7 +139,7 @@ diff -Naurp mdadm.orig/mdadm.8.in mdadm/mdadm.8.in
  .IR md (4)
  under
  .BR "SCRUBBING AND MISMATCHES" .
-@@ -2957,7 +2957,8 @@ option in Grow mode. Currently this work
+@@ -2955,7 +2954,8 @@ option in Grow mode. Currently this work
  .B ppl
  and
  .B resync

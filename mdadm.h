@@ -294,6 +294,11 @@ static inline void __put_unaligned32(__u32 val, void *p)
 #define KIB_TO_BYTES(x)	((x) << 10)
 #define SEC_TO_BYTES(x)	((x) << 9)
 
+/**
+ * This is true for native and DDF, IMSM allows 16.
+ */
+#define MD_NAME_MAX 32
+
 extern const char Name[];
 
 struct md_bb_entry {
@@ -372,9 +377,6 @@ struct mdinfo {
 	int container_member; /* for assembling external-metatdata arrays
 			       * This is to be used internally by metadata
 			       * handler only */
-	int container_enough; /* flag external handlers can set to
-			       * indicate that subarrays have not enough (-1),
-			       * enough to start (0), or all expected disks (1) */
 	char		sys_name[32];
 	struct mdinfo *devs;
 	struct mdinfo *next;
@@ -424,6 +426,12 @@ struct spare_criteria {
 	unsigned long long min_size;
 	unsigned int sector_size;
 };
+
+typedef enum mdadm_status {
+	MDADM_STATUS_SUCCESS = 0,
+	MDADM_STATUS_ERROR,
+	MDADM_STATUS_UNDEF,
+} mdadm_status_t;
 
 enum mode {
 	ASSEMBLE=1,
@@ -593,7 +601,7 @@ struct mddev_ident {
 
 	int	uuid_set;
 	int	uuid[4];
-	char	name[33];
+	char	name[MD_NAME_MAX + 1];
 
 	int super_minor;
 
@@ -1531,14 +1539,11 @@ extern int Assemble(struct supertype *st, char *mddev,
 		    struct mddev_dev *devlist,
 		    struct context *c);
 
-extern int Build(char *mddev, struct mddev_dev *devlist,
-		 struct shape *s, struct context *c);
+extern int Build(struct mddev_ident *ident, struct mddev_dev *devlist, struct shape *s,
+		 struct context *c);
 
-extern int Create(struct supertype *st, char *mddev,
-		  char *name, int *uuid,
-		  int subdevs, struct mddev_dev *devlist,
-		  struct shape *s,
-		  struct context *c);
+extern int Create(struct supertype *st, struct mddev_ident *ident, int subdevs,
+		  struct mddev_dev *devlist, struct shape *s, struct context *c);
 
 extern int Detail(char *dev, struct context *c);
 extern int Detail_Platform(struct superswitch *ss, int scan, int verbose, int export, char *controller_path);
@@ -1609,9 +1614,11 @@ extern int check_raid(int fd, char *name);
 extern int check_partitions(int fd, char *dname,
 			    unsigned long long freesize,
 			    unsigned long long size);
+extern bool is_name_posix_compatible(const char *path);
 extern int fstat_is_blkdev(int fd, char *devname, dev_t *rdev);
 extern int stat_is_blkdev(char *devname, dev_t *rdev);
 
+extern bool is_string_lq(const char * const str, size_t max_len);
 extern bool is_dev_alive(char *path);
 extern int get_mdp_major(void);
 extern int get_maj_min(char *dev, int *major, int *minor);
@@ -1629,6 +1636,8 @@ extern void manage_fork_fds(int close_all);
 extern int continue_via_systemd(char *devnm, char *service_name, char *prefix);
 
 extern void ident_init(struct mddev_ident *ident);
+extern mdadm_status_t ident_set_devname(struct mddev_ident *ident, const char *devname);
+extern mdadm_status_t ident_set_name(struct mddev_ident *ident, const char *name);
 
 extern int parse_auto(char *str, char *msg, int config);
 extern struct mddev_ident *conf_get_ident(char *dev);
@@ -1646,11 +1655,10 @@ extern int conf_get_monitor_delay(void);
 extern char *conf_line(FILE *file);
 extern char *conf_word(FILE *file, int allow_key);
 extern void print_quoted(char *str);
-extern void print_escape(char *str);
 extern int use_udev(void);
 extern unsigned long GCD(unsigned long a, unsigned long b);
 extern int conf_name_is_free(char *name);
-extern bool is_devname_ignore(char *devname);
+extern bool is_devname_ignore(const char *devname);
 extern bool is_devname_md_numbered(const char *devname);
 extern bool is_devname_md_d_numbered(const char *devname);
 extern int conf_verify_devnames(struct mddev_ident *array_list);
@@ -2004,11 +2012,6 @@ enum r0layout {
 #define INVALID_SECTORS 1
 /* And another special number needed for --data_offset=variable */
 #define VARIABLE_OFFSET 3
-
-/**
- * This is true for native and DDF, IMSM allows 16.
- */
-#define MD_NAME_MAX 32
 
 /**
  * is_container() - check if @level is &LEVEL_CONTAINER

@@ -3806,7 +3806,6 @@ static void getinfo_super_imsm(struct supertype *st, struct mdinfo *info, char *
 	struct intel_super *super = st->sb;
 	struct imsm_disk *disk;
 	int map_disks = info->array.raid_disks;
-	int max_enough = -1;
 	int i;
 	struct imsm_super *mpb;
 
@@ -3848,12 +3847,9 @@ static void getinfo_super_imsm(struct supertype *st, struct mdinfo *info, char *
 
 	for (i = 0; i < mpb->num_raid_devs; i++) {
 		struct imsm_dev *dev = get_imsm_dev(super, i);
-		int failed, enough, j, missing = 0;
+		int j = 0;
 		struct imsm_map *map;
-		__u8 state;
 
-		failed = imsm_count_failed(super, dev, MAP_0);
-		state = imsm_check_degraded(super, dev, failed, MAP_0);
 		map = get_imsm_map(dev, MAP_0);
 
 		/* any newly missing disks?
@@ -3868,36 +3864,10 @@ static void getinfo_super_imsm(struct supertype *st, struct mdinfo *info, char *
 
 			if (!(ord & IMSM_ORD_REBUILD) &&
 			    get_imsm_missing(super, idx)) {
-				missing = 1;
 				break;
 			}
 		}
-
-		if (state == IMSM_T_STATE_FAILED)
-			enough = -1;
-		else if (state == IMSM_T_STATE_DEGRADED &&
-			 (state != map->map_state || missing))
-			enough = 0;
-		else /* we're normal, or already degraded */
-			enough = 1;
-		if (is_gen_migration(dev) && missing) {
-			/* during general migration we need all disks
-			 * that process is running on.
-			 * No new missing disk is allowed.
-			 */
-			max_enough = -1;
-			enough = -1;
-			/* no more checks necessary
-			 */
-			break;
-		}
-		/* in the missing/failed disk case check to see
-		 * if at least one array is runnable
-		 */
-		max_enough = max(max_enough, enough);
 	}
-	dprintf("enough: %d\n", max_enough);
-	info->container_enough = max_enough;
 
 	if (super->disks) {
 		__u32 reserved = imsm_reserved_sectors(super, super->disks);
@@ -5561,40 +5531,37 @@ static void imsm_update_version_info(struct intel_super *super)
 	}
 }
 
-static int check_name(struct intel_super *super, char *name, int quiet)
+/**
+ * imsm_check_name() - check imsm naming criteria.
+ * @super: &intel_super pointer, not NULL.
+ * @name: name to check.
+ * @verbose: verbose level.
+ *
+ * Name must be no longer than &MAX_RAID_SERIAL_LEN and must be unique across volumes.
+ *
+ * Returns: &true if @name matches, &false otherwise.
+ */
+static bool imsm_is_name_allowed(struct intel_super *super, const char * const name,
+				 const int verbose)
 {
 	struct imsm_super *mpb = super->anchor;
-	char *reason = NULL;
-	char *start = name;
-	size_t len = strlen(name);
 	int i;
 
-	if (len > 0) {
-		while (isspace(start[len - 1]))
-			start[--len] = 0;
-		while (*start && isspace(*start))
-			++start, --len;
-		memmove(name, start, len + 1);
+	if (is_string_lq(name, MAX_RAID_SERIAL_LEN + 1) == false) {
+		pr_vrb("imsm: Name \"%s\" is too long\n", name);
+		return false;
 	}
-
-	if (len > MAX_RAID_SERIAL_LEN)
-		reason = "must be 16 characters or less";
-	else if (len == 0)
-		reason = "must be a non-empty string";
 
 	for (i = 0; i < mpb->num_raid_devs; i++) {
 		struct imsm_dev *dev = get_imsm_dev(super, i);
 
 		if (strncmp((char *) dev->volume, name, MAX_RAID_SERIAL_LEN) == 0) {
-			reason = "already exists";
-			break;
+			pr_vrb("imsm: Name \"%s\" already exists\n", name);
+			return false;
 		}
 	}
 
-	if (reason && !quiet)
-		pr_err("imsm volume name %s\n", reason);
-
-	return !reason;
+	return true;
 }
 
 static int init_super_imsm_volume(struct supertype *st, mdu_array_info_t *info,
@@ -5689,8 +5656,9 @@ static int init_super_imsm_volume(struct supertype *st, mdu_array_info_t *info,
 		}
 	}
 
-	if (!check_name(super, name, 0))
+	if (imsm_is_name_allowed(super, name, 1) == false)
 		return 0;
+
 	dv = xmalloc(sizeof(*dv));
 	dev = xcalloc(1, sizeof(*dev) + sizeof(__u32) * (info->raid_disks - 1));
 	/*
@@ -8018,7 +7986,7 @@ static int update_subarray_imsm(struct supertype *st, char *subarray,
 		char *ep;
 		int vol;
 
-		if (!check_name(super, name, 0))
+		if (imsm_is_name_allowed(super, name, 1) == false)
 			return 2;
 
 		vol = strtoul(subarray, &ep, 10);
@@ -10345,7 +10313,8 @@ static void imsm_process_update(struct supertype *st,
 			if (a->info.container_member == target)
 				break;
 		dev = get_imsm_dev(super, u->dev_idx);
-		if (a || !check_name(super, name, 1)) {
+
+		if (a || !dev || imsm_is_name_allowed(super, name, 0) == false) {
 			dprintf("failed to rename subarray-%d\n", target);
 			break;
 		}
