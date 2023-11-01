@@ -1975,7 +1975,6 @@ static void getinfo_super_ddf(struct supertype *st, struct mdinfo *info, char *m
 	info->array.ctime	  = DECADE + __be32_to_cpu(*cptr);
 
 	info->array.chunk_size	  = 0;
-	info->container_enough	  = 1;
 
 	info->disk.major	  = 0;
 	info->disk.minor	  = 0;
@@ -1984,12 +1983,14 @@ static void getinfo_super_ddf(struct supertype *st, struct mdinfo *info, char *m
 		info->disk.number = be32_to_cpu(ddf->dlist->disk.refnum);
 		info->disk.raid_disk = find_phys(ddf, ddf->dlist->disk.refnum);
 
+		if (info->disk.raid_disk < 0)
+			return;
+
 		info->data_offset = be64_to_cpu(ddf->phys->
 						  entries[info->disk.raid_disk].
 						  config_size);
 		info->component_size = ddf->dlist->size - info->data_offset;
-		if (info->disk.raid_disk >= 0)
-			pde = ddf->phys->entries + info->disk.raid_disk;
+		pde = ddf->phys->entries + info->disk.raid_disk;
 		if (pde &&
 		    !(be16_to_cpu(pde->state) & DDF_Failed) &&
 		    !(be16_to_cpu(pde->state) & DDF_Missing))
@@ -2364,8 +2365,7 @@ static int init_super_ddf(struct supertype *st,
 	 * Remaining 16 are serial number.... maybe a hostname would do?
 	 */
 	memcpy(ddf->controller.guid, T10, sizeof(T10));
-	gethostname(hostname, sizeof(hostname));
-	hostname[sizeof(hostname) - 1] = 0;
+	s_gethostname(hostname, sizeof(hostname));
 	hostlen = strlen(hostname);
 	memcpy(ddf->controller.guid + 24 - hostlen, hostname, hostlen);
 	for (i = strlen(T10) ; i+hostlen < 24; i++)
