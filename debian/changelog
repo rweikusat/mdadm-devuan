@@ -1,3 +1,12 @@
+mdadm (4.2+20231026-1) sid; urgency=medium
+
+  * Uploading to sid.
+  * Merging upstream version 4.2+20231026.
+  * Refreshing fix-manpages.patch.
+  * Refreshing no-Werror.patch.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Wed, 01 Nov 2023 05:09:47 +0100
+
 mdadm (4.2+20230508-7) sid; urgency=medium
 
   * Uploading to sid.
