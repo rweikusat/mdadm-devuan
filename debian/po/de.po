@@ -1,26 +1,27 @@
 # German debconf translation of mdadm
 # Copyright (C) 2009 Mario Joussen <joussen@debian.org>
-# Copyright (C) 2020 Helge Kreutzmann <debian@helgefjell.de>
+# Copyright (C) 2020-2023 Helge Kreutzmann <debian@helgefjell.de>
 # This file is distributed under the same license as the mdadm package.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mdadm 4.1.5\n"
+"Project-Id-Version: mdadm 4.2+20231026-1\n"
 "Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
 "POT-Creation-Date: 2023-06-18 07:24+0200\n"
-"PO-Revision-Date: 2020-04-10 09:40+0200\n"
-"Last-Translator: Mario Joussen <joussen@debian.org>\n"
+"PO-Revision-Date: 2023-11-09 21:30+0100\n"
+"Last-Translator: Helge Kreutzmann <debian@helgefjell.de>\n"
 "Language-Team: German <debian-l10n-german@lists.debian.org>\n"
 "Language: de\n"
 "MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=ISO-8859-1\n"
+"Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #. Type: note
 #. Description
 #: ../mdadm.templates:2001
 msgid "no systemd init-system detected"
-msgstr ""
+msgstr "Kein Systemd-Init-System erkannt"
 
 #. Type: note
 #. Description
@@ -29,6 +30,9 @@ msgid ""
 "The root filesystem of this system was detected to be on a RAID device, so "
 "mdadm might be required to run during boot to properly start your system."
 msgstr ""
+"Es wurde erkannt, dass sich das Wurzeldateisystem auf einem RAID-Gerät "
+"befindet. Daher könnte es notwendig sein, dass Mdadm während des "
+"Systemstarts ausgeführt wird, um Ihr System korrekt zu starten."
 
 #. Type: note
 #. Description
@@ -38,6 +42,10 @@ msgid ""
 "is available for systemd only. This system seems to use an alternative init-"
 "system which might or might not leave your system unbootable."
 msgstr ""
+"Beginnend mit neueren Versionen des Pakets Mdadm, ist die Init-System-"
+"Integration nur noch für Systemd verfügbar. Dieses System scheint ein "
+"alternatives Init-System zu verwenden, wodurch es sein könnte, dass Ihr "
+"System nicht mehr startbar ist."
 
 #. Type: boolean
 #. Description
@@ -97,7 +105,7 @@ msgstr ""
 #. Description
 #: ../mdadm.templates:5001
 msgid "Do you want to start the MD monitoring daemon?"
-msgstr "Möchten Sie den RAID-Überwachungsdämon starten?"
+msgstr "Möchten Sie den RAID-Überwachungsdaemon starten?"
 
 #. Type: boolean
 #. Description
@@ -106,14 +114,14 @@ msgid ""
 "The MD (RAID) monitor daemon sends email notifications in response to "
 "important MD events (such as a disk failure)."
 msgstr ""
-"Der MD- (RAID-)Überwachungsdämon verschickt Benachrichtigungen als Reaktion "
+"Der MD- (RAID-)Überwachungsdaemon verschickt Benachrichtigungen als Reaktion "
 "auf wichtige RAID-Ereignisse (wie zum Beispiel Festplattenfehler)."
 
 #. Type: boolean
 #. Description
 #: ../mdadm.templates:5001
 msgid "Enabling this option is recommended."
-msgstr "Das Aktivieren dieser Option ist empfohlen."
+msgstr "Das Aktivieren dieser Option wird empfohlen."
 
 #. Type: string
 #. Description
@@ -129,155 +137,4 @@ msgid ""
 "notifications for important MD events."
 msgstr ""
 "Geben Sie bitte die E-Mail-Adresse des Benutzers an, der die E-Mail-"
-"Benachrichtigung für wichtigen MD-Ereignisse erhalten soll."
-
-#~ msgid "MD arrays needed for the root file system:"
-#~ msgstr "Für das Wurzeldateisystem benötigte MD folgende Verbünde:"
-
-#~ msgid ""
-#~ "Please enter 'all', 'none', or a space-separated list of devices such as "
-#~ "'md0 md1' or 'md/1 md/d0' (the leading '/dev/' can be omitted)."
-#~ msgstr ""
-#~ "Bitte geben Sie »all«, »none« oder eine leerzeichenseparierte Ger�"
-#~ "�teliste wie zum Beispiel »md0 md1« oder »md/1 md/d0« ein (das "
-#~ "führende »/dev« kann weggelassen werden)."
-
-#~ msgid "for internal use - only the long description is needed."
-#~ msgstr ""
-#~ "für internen Gebrauch - es wird nur die ausführliche Beschreibung "
-#~ "benötigt."
-
-#~ msgid ""
-#~ "If the system's root file system is located on an MD array (RAID), it "
-#~ "needs to be started early during the boot sequence. If it is located on a "
-#~ "logical volume (LVM), which is on MD, all constituent arrays need to be "
-#~ "started."
-#~ msgstr ""
-#~ "Wenn das Wurzeldateisystem Ihres Systems auf einem MD-Verbund (RAID) "
-#~ "liegt, muss es frühzeitig während des Bootvorgangs gestartet werden. "
-#~ "Wenn sich Ihr Wurzeldateisystem auf einem logischen Laufwerk (LVM) "
-#~ "befindet, das sich wiederum auf einem MD Verbund befindet, müssen alle "
-#~ "zugehörigen Verbünde gestartet werden."
-
-#~ msgid ""
-#~ "If you know exactly which arrays are needed to bring up the root file "
-#~ "system, and you want to postpone starting all other arrays to a later "
-#~ "point in the boot sequence, enter the arrays to start here. "
-#~ "Alternatively, enter 'all' to simply start all available arrays."
-#~ msgstr ""
-#~ "Wenn Sie genau wissen, welche Verbünde benötigt werden, um das "
-#~ "Wurzeldateisystem zu starten, und Sie den Start der anderen Verbünde auf "
-#~ "einen späteren Zeitpunkt in der Bootreihenfolge verschieben wollen, "
-#~ "geben Sie die zu startenden Verbünde hier ein. Alternativ geben Sie "
-#~ "»all« ein, um alle verfügbaren Verbünde zu starten."
-
-#~ msgid ""
-#~ "If you do not need or want to start any arrays for the root file system, "
-#~ "leave the answer blank (or enter 'none'). This may be the case if you are "
-#~ "using kernel autostart or do not need any arrays to boot."
-#~ msgstr ""
-#~ "Falls Sie keine RAID-Verbünde für das Wurzeldateisystem benötigen oder "
-#~ "starten wollen, lassen Sie die Antwort leer (oder geben »none« ein). "
-#~ "Dies könnte der Fall sein, wenn Sie entweder die Autostartfunktion des "
-#~ "Kernels verwenden oder keine Verbünde zum Booten benötigen."
-
-#~ msgid "An error occurred: device node does not exist"
-#~ msgstr "Ein Fehler ist aufgetreten: Geräteknoten existiert nicht"
-
-#~ msgid "An error occurred: not a block device"
-#~ msgstr "Ein Fehler ist aufgetreten: kein Blockgerät"
-
-#~ msgid "An error occurred: not an MD array"
-#~ msgstr "Ein Fehler ist aufgetreten: kein RAID-Verbund"
-
-#~ msgid "An error occurred: array not listed in mdadm.conf file"
-#~ msgstr ""
-#~ "Ein Fehler ist aufgetreten: Verbund nicht in der Datei mdadm.conf "
-#~ "aufgeführt"
-
-#~ msgid "Start arrays not listed in mdadm.conf?"
-#~ msgstr "Nicht in mdadm.conf aufgeführte Verbünde starten?"
-
-#~ msgid ""
-#~ "The specified array (${array}) is not listed in the configuration file "
-#~ "(${config}). Therefore, it cannot be started during boot, unless you "
-#~ "correct the configuration file and recreate the initial ramdisk."
-#~ msgstr ""
-#~ "Der angegebene Verbund (${array}) ist in der Konfigurationsdatei "
-#~ "${config} nicht aufgeführt. Deshalb kann er während des Bootvorgangs "
-#~ "nicht gestartet werden, es sei denn, Sie korrigieren die "
-#~ "Konfigurationsdatei und erzeugen die initiale Ramdisk neu."
-
-#~ msgid ""
-#~ "This warning is only relevant if you need arrays to be started from the "
-#~ "initial ramdisk to be able to boot. If you use kernel autostarting, or do "
-#~ "not need any arrays to be started as early as the initial ramdisk is "
-#~ "loaded, you can simply continue. Alternatively, choose not to continue "
-#~ "and enter 'none' when prompted which arrays to start from the initial "
-#~ "ramdisk."
-#~ msgstr ""
-#~ "Diese Warnung ist nur von Bedeutung, wenn Sie RAID-Verbünde, die von der "
-#~ "initialen Ramdisk gestartet werden, benötigen, um booten zu können. "
-#~ "Falls Sie die Autostartfunktion des Kernels verwenden oder kein RAID-"
-#~ "Verbund zum frühen Zeitpunkt des Ladens der initialen Ramdisk gestartet "
-#~ "werden muss, können Sie einfach fortfahren. Alternativ wählen Sie, "
-#~ "nicht fortzufahren und geben »none« ein, wenn Sie gefragt werden, "
-#~ "welche RAID-Verbünde von der initialen Ramdisk gestartet werden sollen."
-
-#~ msgid "Initialise the superblock if you reuse hard disks"
-#~ msgstr ""
-#~ "Initialisieren Sie den Superblock, wenn Sie Festplatten wieder verwenden."
-
-#~ msgid ""
-#~ "WARNING! If you are using hard disks which have RAID superblocks from "
-#~ "earlier installations in different RAID arrays, you MUST zero each "
-#~ "superblock *before* activating the autostart feature."
-#~ msgstr ""
-#~ "WARNUNG! Wenn Sie Festplatten verwenden, die bereits einen md-Superblock "
-#~ "von einer vorherigen Installation in einem anderen RAID-Verbund besitzen, "
-#~ "so MÜSSEN Sie diesen löschen, *bevor* Sie die Autostart-Funktion "
-#~ "aktivieren."
-
-#~ msgid ""
-#~ "To do this, do not start the RAID devices automatically. First, zero the "
-#~ "superblock (mdadm --zero-superblock /dev/mdX). Next, use `dpkg-"
-#~ "reconfigure mdadm` to reactivate the autostart feature."
-#~ msgstr ""
-#~ "Dazu starten Sie die RAID-Laufwerke nicht automatisch und löschen dann "
-#~ "erst den Superblock (mdadm --zero-superblock /dev/mdX). Danach können "
-#~ "Sie mit »dpkg-reconfigure mdadm« die Autostart-Funktion aktivieren."
-
-#~ msgid ""
-#~ "You have the option to start all other arrays (those not needed for the "
-#~ "root filesystem) later in the boot sequence. Doing so will give you "
-#~ "greater control over the arrays with the mdadm configuration file. "
-#~ "Starting all arrays at boot-time may be safer though."
-#~ msgstr ""
-#~ "Sie haben die Option, alle anderen Verbünde (diese die nicht für das "
-#~ "Wurzeldateisystem benötigt werden) später während des Bootvorgangs zu "
-#~ "starten. Damit haben Sie größere Kontrolle über die Verbünde mit Hilfe "
-#~ "der Mdadm-Konfigurationsdatei. Es ist jedoch sicherer, alle Verbünde "
-#~ "beim Booten zu starten."
-
-#~ msgid ""
-#~ "If RAID devices are started automatically, all RAID devices are "
-#~ "discovered and assembled automatically at system startup. This option "
-#~ "should only be used if the md driver is compiled as a module. If it is "
-#~ "compiled into your kernel, the automatic startup will be performed at "
-#~ "boot time by the kernel and therefore you should not choose this option."
-#~ msgstr ""
-#~ "Wenn die RAID-Laufwerke automatisch gestartet werden, werden alle RAID-"
-#~ "Laufwerke beim Systemstart automatisch gefunden und gestartet. Diese "
-#~ "Option sollte nur benutzt werden, falls der md-Treiber als Modul "
-#~ "kompiliert wurde. Falls er in den Kernel einkompiliert wurde, führt der "
-#~ "Kernel den automatischen Start beim Booten durch und Sie sollten diese "
-#~ "Option deshalb nicht auswählen."
-
-#~ msgid ""
-#~ "When the RAID monitor daemon runs, email notifications are sent when a "
-#~ "disk belonging to a RAID array fails or changes its status for some "
-#~ "reason."
-#~ msgstr ""
-#~ "Wird der RAID-Überwachungsdaemon gestartet, so werden E-Mail-"
-#~ "Benachrichtigungen verschickt, falls ein zum RAID gehörendes Laufwerk "
-#~ "ausfällt oder den Status ändert."
+"Benachrichtigungen der wichtige MD-Ereignisse erhalten soll."

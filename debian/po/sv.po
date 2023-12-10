@@ -1,5 +1,5 @@
-# Swedish debconf translation of mdadm
-# Copyright (C) 2008 Martin Ågren <martin.agren@gmail.com>
+# Translation of mdadm debconf template to Swedish
+# Copyright (C) 2008-2023 Martin Bagge <brother@persilja.net>
 # This file is distributed under the same license as the mdadm package.
 #
 msgid ""
@@ -7,8 +7,8 @@ msgstr ""
 "Project-Id-Version: mdadm_2.6.7-3_sv\n"
 "Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
 "POT-Creation-Date: 2023-06-18 07:24+0200\n"
-"PO-Revision-Date: 2008-07-23 18:34+0200\n"
-"Last-Translator: Martin Ågren <martin.agren@gmail.com>\n"
+"PO-Revision-Date: 2023-12-08 11:11+0100\n"
+"Last-Translator: Martin Bagge <brother@persilja.net>\n"
 "Language-Team: Swedish <debian-l10n-swedish@lists.debian.org>\n"
 "Language: sv\n"
 "MIME-Version: 1.0\n"
@@ -20,7 +20,7 @@ msgstr ""
 #. Description
 #: ../mdadm.templates:2001
 msgid "no systemd init-system detected"
-msgstr ""
+msgstr "hittade inget systemd init-system"
 
 #. Type: note
 #. Description
@@ -29,6 +29,8 @@ msgid ""
 "The root filesystem of this system was detected to be on a RAID device, so "
 "mdadm might be required to run during boot to properly start your system."
 msgstr ""
+"Rot-filsystemet verkar finnas på en RAID-enhet vilket leder till att mdadm "
+"antagligen behöver köras under uppstartssekvensen."
 
 #. Type: note
 #. Description
@@ -38,6 +40,9 @@ msgid ""
 "is available for systemd only. This system seems to use an alternative init-"
 "system which might or might not leave your system unbootable."
 msgstr ""
+"I nyare versioner av mdadm är integrationen med init-system enbart "
+"tillgänglig för systemd. Denna maskin verkar använda ett alternativt init-"
+"system vilket kan leda till att maskinen inte kan starta korrekt."
 
 #. Type: boolean
 #. Description
@@ -78,7 +83,7 @@ msgstr ""
 #. Description
 #: ../mdadm.templates:4001
 msgid "Should mdadm check once a day for degraded arrays?"
-msgstr ""
+msgstr "Ska mdadm kontrollera RAID-enheterna en gång om dagen?"
 
 #. Type: boolean
 #. Description
@@ -87,6 +92,9 @@ msgid ""
 "mdadm can check once a day for degraded arrays and missing spares to ensure "
 "that such events don't go unnoticed."
 msgstr ""
+"Mdadm kan göra en daglig kontroll av RAID-enheterna och kontrollera status "
+"samt om det finns reservdiskar tillgängligt. På det sättet minskar risken "
+"att sådana kontroller missas."
 
 #. Type: boolean
 #. Description
@@ -125,90 +133,3 @@ msgid ""
 msgstr ""
 "Ange e-postadressen till den användare som ska ta emot e-postnotifieringar "
 "för dessa viktiga MD-händelser."
-
-#~ msgid "MD arrays needed for the root file system:"
-#~ msgstr "MD-kedjor som behövs för rotfilsystemet:"
-
-#~ msgid ""
-#~ "Please enter 'all', 'none', or a space-separated list of devices such as "
-#~ "'md0 md1' or 'md/1 md/d0' (the leading '/dev/' can be omitted)."
-#~ msgstr ""
-#~ "Ange \"all\", \"none\" eller en blankstegsseparerad lista på enheter, "
-#~ "såsom \"md0 md1\" eller \"md/1 md/0\" (det inledande \"/dev\" kan "
-#~ "uteslutas)."
-
-#~ msgid "for internal use - only the long description is needed."
-#~ msgstr "för intern användning - endast den långa beskrivningen behövs."
-
-#~ msgid ""
-#~ "If the system's root file system is located on an MD array (RAID), it "
-#~ "needs to be started early during the boot sequence. If it is located on a "
-#~ "logical volume (LVM), which is on MD, all constituent arrays need to be "
-#~ "started."
-#~ msgstr ""
-#~ "Om ditt system har sitt rotfilsystem på en MD-kedja (RAID) behöver den "
-#~ "startas upp tidigt under uppstartssekvensen. Om ditt rotfilsystem finns "
-#~ "på en logisk volym (LVM), vilket är på MD, behöver alla bestående kedjor "
-#~ "startas."
-
-#~ msgid ""
-#~ "If you know exactly which arrays are needed to bring up the root file "
-#~ "system, and you want to postpone starting all other arrays to a later "
-#~ "point in the boot sequence, enter the arrays to start here. "
-#~ "Alternatively, enter 'all' to simply start all available arrays."
-#~ msgstr ""
-#~ "Om du vet exakt vilka kedjor som behövs för att ta upp rotfilsystemet, "
-#~ "och du vill skjuta upp uppstarten för alla andra kedjor till en senare "
-#~ "tidspunkt i uppstartssekvensen, ange vilka kedjor som ska starta här. "
-#~ "Alternativt, ange \"all\" för att helt enkelt starta alla tillgängliga "
-#~ "kedjor."
-
-#~ msgid ""
-#~ "If you do not need or want to start any arrays for the root file system, "
-#~ "leave the answer blank (or enter 'none'). This may be the case if you are "
-#~ "using kernel autostart or do not need any arrays to boot."
-#~ msgstr ""
-#~ "Om du inte behöver eller vill starta några kedjor för rotfilsystemet, "
-#~ "lämna svaret blankt (eller ange \"none\"). Detta kan vara fallet om du "
-#~ "använder kärnans automatstart eller inte behöver några kedjor för att "
-#~ "starta upp."
-
-#~ msgid "An error occurred: device node does not exist"
-#~ msgstr "Ett fel inträffade: enhetsnoden finns inte"
-
-#~ msgid "An error occurred: not a block device"
-#~ msgstr "Ett fel inträffade: inte en blockenhet"
-
-#~ msgid "An error occurred: not an MD array"
-#~ msgstr "Ett fel inträffade: inte en MD-kedja"
-
-#~ msgid "An error occurred: array not listed in mdadm.conf file"
-#~ msgstr "Ett fel inträffade: kedjan är inte listad i filen mdadm.conf"
-
-#~ msgid "Start arrays not listed in mdadm.conf?"
-#~ msgstr "Starta kedjor som inte är listade i mdadm.conf?"
-
-#~ msgid ""
-#~ "The specified array (${array}) is not listed in the configuration file "
-#~ "(${config}). Therefore, it cannot be started during boot, unless you "
-#~ "correct the configuration file and recreate the initial ramdisk."
-#~ msgstr ""
-#~ "Kedjan du har angivit (${array}) är inte listad i konfigurationsfilen "
-#~ "(${config}). Därför kan den inte startas under systemets uppstart, såvida "
-#~ "du inte rättar till konfigurationsfilen och återskapar den initiala "
-#~ "ramdisken."
-
-#~ msgid ""
-#~ "This warning is only relevant if you need arrays to be started from the "
-#~ "initial ramdisk to be able to boot. If you use kernel autostarting, or do "
-#~ "not need any arrays to be started as early as the initial ramdisk is "
-#~ "loaded, you can simply continue. Alternatively, choose not to continue "
-#~ "and enter 'none' when prompted which arrays to start from the initial "
-#~ "ramdisk."
-#~ msgstr ""
-#~ "Den här varningen är endast relevant om du behöver kedjor som ska startas "
-#~ "från den initiala ramdisken för att kunna starta upp systemet. Om du "
-#~ "använder kärnans automatstart, eller inte behöver starta några kedjor så "
-#~ "tidigt som när de initiala ramdisken läses in, kan du helt enkelt "
-#~ "fortsätta. Alternativt, välj att inte fortsätta och ange \"none\" när "
-#~ "frågan om vilka kedjor som ska startas från den initiala ramdisken ställs."
