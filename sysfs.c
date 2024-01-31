@@ -148,7 +148,7 @@ struct mdinfo *sysfs_read(int fd, char *devnm, unsigned long options)
 		strcpy(base, "metadata_version");
 		if (load_sys(fname, buf, sizeof(buf)))
 			goto abort;
-		if (strncmp(buf, "none", 4) == 0) {
+		if (str_is_none(buf) == true) {
 			sra->array.major_version =
 				sra->array.minor_version = -1;
 			strcpy(sra->text_version, "");
@@ -244,7 +244,7 @@ struct mdinfo *sysfs_read(int fd, char *devnm, unsigned long options)
 			goto abort;
 		if (strncmp(buf, "file", 4) == 0)
 			sra->bitmap_offset = 1;
-		else if (strncmp(buf, "none", 4) == 0)
+		else if (str_is_none(buf) == true)
 			sra->bitmap_offset = 0;
 		else if (buf[0] == '+')
 			sra->bitmap_offset = strtol(buf+1, NULL, 10);
@@ -664,7 +664,7 @@ int sysfs_set_array(struct mdinfo *info, int vers)
 	ver[0] = 0;
 	if (info->array.major_version == -1 &&
 	    info->array.minor_version == -2) {
-		char buf[1024];
+		char buf[SYSFS_MAX_BUF_SIZE];
 
 		strcat(strcpy(ver, "external:"), info->text_version);
 
@@ -675,7 +675,7 @@ int sysfs_set_array(struct mdinfo *info, int vers)
 		 * version first, and preserve the flag
 		 */
 		if (sysfs_get_str(info, NULL, "metadata_version",
-				  buf, 1024) > 0)
+				  buf, sizeof(buf)) > 0)
 			if (strlen(buf) >= 9 && buf[9] == '-')
 				ver[9] = '-';
 
@@ -803,72 +803,6 @@ int sysfs_add_disk(struct mdinfo *sra, struct mdinfo *sd, int resume)
 	return rv;
 }
 
-#if 0
-int sysfs_disk_to_sg(int fd)
-{
-	/* from an open block device, try find and open its corresponding
-	 * scsi_generic interface
-	 */
-	struct stat st;
-	char path[256];
-	char sg_path[256];
-	char sg_major_minor[10];
-	char *c;
-	DIR *dir;
-	struct dirent *de;
-	int major, minor, rv;
-
-	if (fstat(fd, &st))
-		return -1;
-
-	snprintf(path, sizeof(path), "/sys/dev/block/%d:%d/device",
-		 major(st.st_rdev), minor(st.st_rdev));
-
-	dir = opendir(path);
-	if (!dir)
-		return -1;
-
-	de = readdir(dir);
-	while (de) {
-		if (strncmp("scsi_generic:", de->d_name,
-			    strlen("scsi_generic:")) == 0)
-			break;
-		de = readdir(dir);
-	}
-	closedir(dir);
-
-	if (!de)
-		return -1;
-
-	snprintf(sg_path, sizeof(sg_path), "%s/%s/dev", path, de->d_name);
-	fd = open(sg_path, O_RDONLY);
-	if (fd < 0)
-		return fd;
-
-	rv = read(fd, sg_major_minor, sizeof(sg_major_minor));
-	close(fd);
-	if (rv < 0 || rv == sizeof(sg_major_minor))
-		return -1;
-	else
-		sg_major_minor[rv - 1] = '\0';
-
-	c = strchr(sg_major_minor, ':');
-	*c = '\0';
-	c++;
-	major = strtol(sg_major_minor, NULL, 10);
-	minor = strtol(c, NULL, 10);
-	snprintf(path, sizeof(path), "/dev/.tmp.md.%d:%d:%d",
-		 (int) getpid(), major, minor);
-	if (mknod(path, S_IFCHR|0600, makedev(major, minor))==0) {
-			fd = open(path, O_RDONLY);
-			unlink(path);
-			return fd;
-	}
-
-	return -1;
-}
-#endif
-
 int sysfs_disk_to_scsi_id(int fd, __u32 *id)
 {
 	/* from an open block device, try to retrieve it scsi_id */
@@ -966,11 +900,11 @@ int sysfs_freeze_array(struct mdinfo *sra)
 	 * return 0 if this kernel doesn't support 'frozen'
 	 * return 1 if it worked.
 	 */
-	char buf[20];
+	char buf[SYSFS_MAX_BUF_SIZE];
 
 	if (!sysfs_attribute_available(sra, NULL, "sync_action"))
 		return 1; /* no sync_action == frozen */
-	if (sysfs_get_str(sra, NULL, "sync_action", buf, 20) <= 0)
+	if (sysfs_get_str(sra, NULL, "sync_action", buf, sizeof(buf)) <= 0)
 		return 0;
 	if (strcmp(buf, "frozen\n") == 0)
 		/* Already frozen */

@@ -81,15 +81,15 @@ static int read_attr(char *buf, int len, int fd)
 
 static void read_resync_start(int fd, unsigned long long *v)
 {
-	char buf[30];
+	char buf[SYSFS_MAX_BUF_SIZE];
 	int n;
 
-	n = read_attr(buf, 30, fd);
+	n = read_attr(buf, sizeof(buf), fd);
 	if (n <= 0) {
 		dprintf("Failed to read resync_start (%d)\n", fd);
 		return;
 	}
-	if (strncmp(buf, "none", 4) == 0)
+	if (str_is_none(buf) == true)
 		*v = MaxSector;
 	else
 		*v = strtoull(buf, NULL, 10);
@@ -98,11 +98,11 @@ static void read_resync_start(int fd, unsigned long long *v)
 static unsigned long long read_sync_completed(int fd)
 {
 	unsigned long long val;
-	char buf[50];
+	char buf[SYSFS_MAX_BUF_SIZE];
 	int n;
 	char *ep;
 
-	n = read_attr(buf, 50, fd);
+	n = read_attr(buf, sizeof(buf), fd);
 
 	if (n <= 0)
 		return 0;
@@ -115,8 +115,8 @@ static unsigned long long read_sync_completed(int fd)
 
 static enum array_state read_state(int fd)
 {
-	char buf[20];
-	int n = read_attr(buf, 20, fd);
+	char buf[SYSFS_MAX_BUF_SIZE];
+	int n = read_attr(buf, sizeof(buf), fd);
 
 	if (n <= 0)
 		return bad_word;
@@ -125,8 +125,8 @@ static enum array_state read_state(int fd)
 
 static enum sync_action read_action( int fd)
 {
-	char buf[20];
-	int n = read_attr(buf, 20, fd);
+	char buf[SYSFS_MAX_BUF_SIZE];
+	int n = read_attr(buf, sizeof(buf), fd);
 
 	if (n <= 0)
 		return bad_action;
@@ -135,7 +135,7 @@ static enum sync_action read_action( int fd)
 
 int read_dev_state(int fd)
 {
-	char buf[100];
+	char buf[SYSFS_MAX_BUF_SIZE];
 	int n = read_attr(buf, sizeof(buf), fd);
 	char *cp;
 	int rv = 0;
@@ -595,12 +595,12 @@ static int read_and_act(struct active_array *a, fd_set *fds)
 		 */
 		if ((a->curr_action != reshape) &&
 		    (a->prev_action == reshape)) {
-			char buf[40];
+			char buf[SYSFS_MAX_BUF_SIZE];
 			if ((sysfs_get_str(&a->info, NULL,
 					  "reshape_position",
 					  buf,
 					  sizeof(buf)) >= 0) &&
-			     strncmp(buf, "none", 4) == 0)
+			     str_is_none(buf) == true)
 				a->last_checkpoint = a->info.component_size;
 		}
 		a->container->ss->set_array_state(a, a->curr_state <= clean);
