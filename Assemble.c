@@ -1806,12 +1806,6 @@ try_again:
 					       i, mddev, devices[j].devname);
 			}
 		}
-#if 0
-		if (!(super.disks[i].i.disk.state & (1 << MD_DISK_FAULTY))) {
-			pr_err("devices %d of %s is not marked FAULTY in superblock, but cannot be found\n",
-			       i, mddev);
-		}
-#endif
 	}
 	if (c->force && !clean && !is_container(content->array.level) &&
 	    !enough(content->array.level, content->array.raid_disks,
@@ -2021,8 +2015,7 @@ int assemble_container_content(struct supertype *st, int mdfd,
 		if (dev)
 			continue;
 		/* Don't want this one any more */
-		if (sysfs_set_str(sra, dev2, "slot", "none") < 0 &&
-		    errno == EBUSY) {
+		if (sysfs_set_str(sra, dev2, "slot", STR_COMMON_NONE) < 0 && errno == EBUSY) {
 			pr_err("Cannot remove old device %s: not updating %s\n", dev2->sys_name, sra->sys_name);
 			sysfs_free(sra);
 			return 1;
