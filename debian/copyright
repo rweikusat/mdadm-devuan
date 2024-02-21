@@ -8,10 +8,10 @@ Copyright: 2001-2006 Neil Brown <neilb@suse.de>
 License: GPL-2+
 
 Files: debian/*
-Copyright: 2001-2005 Mario Jou/3en <joussen@debian.org>
-           2005-2008 Martin F. Krafft <madduck@debian.org>
+Copyright: 2023-2024 Daniel Baumann <daniel.baumann@progress-linux.org>
            2020 Felix Lechner <felix.lechner@lease-up.com>
-           2023-2024 Daniel Baumann <daniel.baumann@progress-linux.org>
+           2005-2008 Martin F. Krafft <madduck@debian.org>
+           2001-2005 Mario Jou/3en <joussen@debian.org>
 License: GPL-2+
 
 License: GPL-2+
