@@ -2085,9 +2085,10 @@ int Grow_reshape(char *devname, int fd,
 			if (!mdmon_running(st->container_devnm))
 				start_mdmon(st->container_devnm);
 			ping_monitor(container);
-			if (mdmon_running(st->container_devnm) &&
-					st->update_tail == NULL)
-				st->update_tail = &st->updates;
+			if (mdmon_running(st->container_devnm) == false) {
+				pr_err("No mdmon found. Grow cannot continue.\n");
+				goto release;
+			}
 		}
 
 		if (s->size == MAX_SIZE)
@@ -2097,11 +2098,7 @@ int Grow_reshape(char *devname, int fd,
 			/* got truncated to 32bit, write to
 			 * component_size instead
 			 */
-			if (sra)
-				rv = sysfs_set_num(sra, NULL,
-						   "component_size", s->size);
-			else
-				rv = -1;
+			rv = sysfs_set_num(sra, NULL, "component_size", s->size);
 		} else {
 			rv = md_set_array_info(fd, &array);
 
@@ -3048,6 +3045,8 @@ static int reshape_array(char *container, int fd, char *devname,
 		dprintf("Cannot get array information.\n");
 		goto release;
 	}
+	if (st->update_tail == NULL)
+		st->update_tail = &st->updates;
 	if (array.level == 0 && info->component_size == 0) {
 		get_dev_size(fd, NULL, &array_size);
 		info->component_size = array_size / array.raid_disks;
@@ -4414,19 +4413,8 @@ static void validate(int afd, int bfd, unsigned long long offset)
 		lseek64(afd, __le64_to_cpu(bsb2.arraystart)*512, 0);
 		if ((unsigned long long)read(afd, abuf, len) != len)
 			fail("read first from array failed");
-		if (memcmp(bbuf, abuf, len) != 0) {
-#if 0
-			int i;
-			printf("offset=%llu len=%llu\n",
-			       (unsigned long long)__le64_to_cpu(bsb2.arraystart)*512, len);
-			for (i=0; i<len; i++)
-				if (bbuf[i] != abuf[i]) {
-					printf("first diff byte %d\n", i);
-					break;
-				}
-#endif
+		if (memcmp(bbuf, abuf, len) != 0)
 			fail("data1 compare failed");
-		}
 	}
 	if (bsb2.length2) {
 		unsigned long long len = __le64_to_cpu(bsb2.length2)*512;
@@ -5152,9 +5140,7 @@ int Grow_continue_command(char *devname, int fd,
 			start_mdmon(container);
 		ping_monitor(container);
 
-		if (mdmon_running(container))
-			st->update_tail = &st->updates;
-		else {
+		if (mdmon_running(container) == false) {
 			pr_err("No mdmon found. Grow cannot continue.\n");
 			ret_val = 1;
 			goto Grow_continue_command_exit;

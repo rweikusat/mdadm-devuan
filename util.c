@@ -36,7 +36,7 @@
 #include	<ctype.h>
 #include	<dirent.h>
 #include	<dlfcn.h>
-
+#include	<limits.h>
 
 /*
  * following taken from linux/blkpg.h because they aren't
@@ -589,19 +589,21 @@ char *__fname_from_uuid(int id[4], int swap, char *buf, char sep)
 
 }
 
-char *fname_from_uuid(struct supertype *st, struct mdinfo *info,
-		      char *buf, char sep)
+/**
+ * fname_from_uuid() - generate uuid string. Should not be used with super1.
+ * @info: info with uuid
+ * @buf: buf to fill.
+ *
+ * This routine should not be used with super1. See detail_fname_from_uuid() for details. It does
+ * not use superswitch swapuuid as it should be 0 but it has to do UUID conversion if host is big
+ * endian- left for backward compatibility.
+ */
+char *fname_from_uuid(struct mdinfo *info, char *buf)
 {
-	// dirty hack to work around an issue with super1 superblocks...
-	// super1 superblocks need swapuuid set in order for assembly to
-	// work, but can't have it set if we want this printout to match
-	// all the other uuid printouts in super1.c, so we force swapuuid
-	// to 1 to make our printout match the rest of super1
 #if __BYTE_ORDER == BIG_ENDIAN
-	return __fname_from_uuid(info->uuid, 1, buf, sep);
+	return __fname_from_uuid(info->uuid, true, buf, ':');
 #else
-	return __fname_from_uuid(info->uuid, (st->ss == &super1) ? 1 :
-				 st->ss->swapuuid, buf, sep);
+	return __fname_from_uuid(info->uuid, false, buf, ':');
 #endif
 }
 
@@ -1266,40 +1268,6 @@ struct supertype *super_by_fd(int fd, char **subarrayp)
 	return st;
 }
 
-int dev_size_from_id(dev_t id, unsigned long long *size)
-{
-	char buf[20];
-	int fd;
-
-	sprintf(buf, "%d:%d", major(id), minor(id));
-	fd = dev_open(buf, O_RDONLY);
-	if (fd < 0)
-		return 0;
-	if (get_dev_size(fd, NULL, size)) {
-		close(fd);
-		return 1;
-	}
-	close(fd);
-	return 0;
-}
-
-int dev_sector_size_from_id(dev_t id, unsigned int *size)
-{
-	char buf[20];
-	int fd;
-
-	sprintf(buf, "%d:%d", major(id), minor(id));
-	fd = dev_open(buf, O_RDONLY);
-	if (fd < 0)
-		return 0;
-	if (get_dev_sector_size(fd, NULL, size)) {
-		close(fd);
-		return 1;
-	}
-	close(fd);
-	return 0;
-}
-
 struct supertype *dup_super(struct supertype *orig)
 {
 	struct supertype *st;
@@ -1899,8 +1867,7 @@ int set_array_info(int mdfd, struct supertype *st, struct mdinfo *info)
 	int rv;
 
 	if (st->ss->external)
-		return sysfs_set_array(info, 9003);
-		
+		return sysfs_set_array(info);
 	memset(&inf, 0, sizeof(inf));
 	inf.major_version = info->array.major_version;
 	inf.minor_version = info->array.minor_version;
@@ -2088,6 +2055,65 @@ void append_metadata_update(struct supertype *st, void *buf, int len)
 unsigned int __invalid_size_argument_for_IOC = 0;
 #endif
 
+/**
+ * disk_fd_matches_criteria() - check if device matches spare criteria.
+ * @st: supertype, not NULL.
+ * @disk_fd: file descriptor of the disk.
+ * @sc: criteria to test.
+ *
+ * Return: true if disk matches criteria, false otherwise.
+ */
+bool disk_fd_matches_criteria(struct supertype *st, int disk_fd, struct spare_criteria *sc)
+{
+	unsigned int dev_sector_size = 0;
+	unsigned long long dev_size = 0;
+
+	if (!sc->criteria_set)
+		return true;
+
+	if (!get_dev_size(disk_fd, NULL, &dev_size) || dev_size < sc->min_size)
+		return false;
+
+	if (!get_dev_sector_size(disk_fd, NULL, &dev_sector_size) ||
+	    sc->sector_size != dev_sector_size)
+		return false;
+
+	if (drive_test_and_add_policies(st, &sc->pols, disk_fd, 0))
+		return false;
+
+	return true;
+}
+
+/**
+ * devid_matches_criteria() - check if device referenced by devid matches spare criteria.
+ * @st: supertype, not NULL.
+ * @devid: devid of the device to check.
+ * @sc: criteria to test.
+ *
+ * Return: true if disk matches criteria, false otherwise.
+ */
+bool devid_matches_criteria(struct supertype *st, dev_t devid, struct spare_criteria *sc)
+{
+	char buf[NAME_MAX];
+	bool ret;
+	int fd;
+
+	if (!sc->criteria_set)
+		return true;
+
+	snprintf(buf, NAME_MAX, "%d:%d", major(devid), minor(devid));
+
+	fd = dev_open(buf, O_RDONLY);
+	if (!is_fd_valid(fd))
+		return false;
+
+	/* Error code inherited */
+	ret = disk_fd_matches_criteria(st, fd, sc);
+
+	close(fd);
+	return ret;
+}
+
 /* Pick all spares matching given criteria from a container
  * if min_size == 0 do not check size
  * if domlist == NULL do not check domains
@@ -2111,28 +2137,13 @@ struct mdinfo *container_choose_spares(struct supertype *st,
 	dp = &disks->devs;
 	disks->array.spare_disks = 0;
 	while (*dp) {
-		int found = 0;
+		bool found = false;
+
 		d = *dp;
 		if (d->disk.state == 0) {
-			/* check if size is acceptable */
-			unsigned long long dev_size;
-			unsigned int dev_sector_size;
-			int size_valid = 0;
-			int sector_size_valid = 0;
-
 			dev_t dev = makedev(d->disk.major,d->disk.minor);
 
-			if (!criteria->min_size ||
-			   (dev_size_from_id(dev,  &dev_size) &&
-			    dev_size >= criteria->min_size))
-				size_valid = 1;
-
-			if (!criteria->sector_size ||
-			    (dev_sector_size_from_id(dev, &dev_sector_size) &&
-			     criteria->sector_size == dev_sector_size))
-				sector_size_valid = 1;
-
-			found = size_valid && sector_size_valid;
+			found = devid_matches_criteria(st, dev, criteria);
 
 			/* check if domain matches */
 			if (found && domlist) {
@@ -2141,7 +2152,8 @@ struct mdinfo *container_choose_spares(struct supertype *st,
 					pol_add(&pol, pol_domain,
 						spare_group, NULL);
 				if (domain_test(domlist, pol, metadata) != 1)
-					found = 0;
+					found = false;
+
 				dev_policy_free(pol);
 			}
 		}
