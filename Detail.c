@@ -49,6 +49,30 @@ static int add_device(const char *dev, char ***p_devices,
 	return n_devices + 1;
 }
 
+/**
+ * detail_fname_from_uuid() - generate uuid string with special super1 handling.
+ * @mp: map entry to parse.
+ * @buf: buf to write.
+ *
+ * Hack to workaround an issue with super1 superblocks. It swapuuid set in order for assembly
+ * to work, but can't have it set if we want this printout to match all the other uuid printouts
+ * in super1.c, so we force swapuuid to 1 to make our printout match the rest of super1.
+ *
+ * Always convert uuid if host is big endian.
+ */
+char *detail_fname_from_uuid(struct map_ent *mp, char *buf)
+{
+#if __BYTE_ORDER == BIG_ENDIAN
+	bool swap = true;
+#else
+	bool swap = false;
+#endif
+	if (strncmp(mp->metadata, "1.", 2) == 0)
+		swap = true;
+
+	return __fname_from_uuid(mp->uuid, swap, buf, ':');
+}
+
 int Detail(char *dev, struct context *c)
 {
 	/*
@@ -226,6 +250,9 @@ int Detail(char *dev, struct context *c)
 		str = map_num(pers, array.level);
 
 	if (c->export) {
+		char nbuf[64];
+		struct map_ent *mp = NULL, *map = NULL;
+
 		if (array.raid_disks) {
 			if (str)
 				printf("MD_LEVEL=%s\n", str);
@@ -247,32 +274,22 @@ int Detail(char *dev, struct context *c)
 				       array.minor_version);
 		}
 
-		if (st && st->sb && info) {
-			char nbuf[64];
-			struct map_ent *mp, *map = NULL;
-
-			fname_from_uuid(st, info, nbuf, ':');
-			printf("MD_UUID=%s\n", nbuf + 5);
+		if (info)
 			mp = map_by_uuid(&map, info->uuid);
+		if (!mp)
+			mp = map_by_devnm(&map, fd2devnm(fd));
 
-			if (mp && mp->path && strncmp(mp->path, DEV_MD_DIR, DEV_MD_DIR_LEN) == 0)
+		if (mp) {
+			detail_fname_from_uuid(mp, nbuf);
+			printf("MD_UUID=%s\n", nbuf + 5);
+			if (mp->path && strncmp(mp->path, DEV_MD_DIR, DEV_MD_DIR_LEN) == 0)
 				printf("MD_DEVNAME=%s\n", mp->path + DEV_MD_DIR_LEN);
+		}
 
+		map_free(map);
+		if (st && st->sb) {
 			if (st->ss->export_detail_super)
 				st->ss->export_detail_super(st);
-			map_free(map);
-		} else {
-			struct map_ent *mp, *map = NULL;
-			char nbuf[64];
-			mp = map_by_devnm(&map, fd2devnm(fd));
-			if (mp) {
-				__fname_from_uuid(mp->uuid, 0, nbuf, ':');
-				printf("MD_UUID=%s\n", nbuf+5);
-			}
-			if (mp && mp->path && strncmp(mp->path, DEV_MD_DIR, DEV_MD_DIR_LEN) == 0)
-				printf("MD_DEVNAME=%s\n", mp->path + DEV_MD_DIR_LEN);
-
-			map_free(map);
 		}
 		if (!c->no_devices && sra) {
 			struct mdinfo *mdi;
