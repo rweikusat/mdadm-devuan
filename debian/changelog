@@ -1,3 +1,14 @@
+mdadm (4.3+20240412-1) sid; urgency=medium
+
+  * Uploading to sid.
+  * Merging upstream version 4.3+20240412.
+  * Updating to standards-version 4.7.0.
+  * Updating mdadm docs.
+  * Updating mdadm examples.
+  * Correcting filename of TODO.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Sat, 27 Apr 2024 05:20:02 +0200
+
 mdadm (4.3-1devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.3-1.
