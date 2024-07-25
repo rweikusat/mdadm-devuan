@@ -23,6 +23,28 @@ mdsize12=19988
 # ddf needs bigger devices as 32Meg is reserved!
 ddfsize=65536
 
+# Systemd flags
+devname_as_serial_flag="IMSM_DEVNAME_AS_SERIAL=1"
+no_platform_flag="IMSM_NO_PLATFORM=1"
+
+# Common colors
+COLOR_FAIL='\033[0;31m' #RED
+COLOR_WARN='\033[1;33m' #YELLOW
+COLOR_SUCCESS='\033[0;32m' #GREEN
+COLOR_NONE='\033[0m'
+
+fail() {
+	printf "${COLOR_FAIL}$1${COLOR_NONE}"
+}
+
+warn() {
+	printf "${COLOR_WARN}$1${COLOR_NONE}"
+}
+
+succeed() {
+	printf "${COLOR_SUCCESS}$1${COLOR_NONE}"
+}
+
 # $1 is optional parameter, it shows why to save log
 save_log() {
 	status=$1
@@ -36,7 +58,8 @@ save_log() {
 	cat /proc/mdstat >> $logdir/$logfile
 	array=($(mdadm -Ds | cut -d' ' -f2))
 	[ "$1" == "fail" ] &&
-		echo "FAILED - see $logdir/$_basename.log and $logdir/$logfile for details"
+		fail "FAILED"
+		echo " - see $logdir/$_basename.log and $logdir/$logfile for details\n"
 	if [ $DEVTYPE == 'lvm' ]
 	then
 		# not supported lvm type yet
@@ -86,6 +109,7 @@ cleanup() {
 		$mdadm --zero ${disks[@]} &> /dev/null
 	;;
 	esac
+	clean_systemd_env
 }
 
 do_clean()
@@ -125,6 +149,7 @@ check_env() {
 		MULTIPATH="yes"
 	if [ "$MULTIPATH" != "yes" ]; then
 		echo "test: skipping tests for multipath, which is removed in upstream 6.8+ kernels"
+		skipping_multipath="yes"
 	fi
 
 	# Check whether to run linear tests
@@ -133,7 +158,67 @@ check_env() {
 		LINEAR="yes"
 	if [ "$LINEAR" != "yes" ]; then
 		echo "test: skipping tests for linear, which is removed in upstream 6.8+ kernels"
+		skipping_linear="yes"
 	fi
+}
+
+record_system_speed_limit() {
+	system_speed_limit_max=`cat /proc/sys/dev/raid/speed_limit_max`
+	system_speed_limit_min=`cat /proc/sys/dev/raid/speed_limit_min`
+}
+
+# To avoid sync action finishes before checking it, it needs to limit
+# the sync speed
+control_system_speed_limit() {
+	echo $test_speed_limit_min > /proc/sys/dev/raid/speed_limit_min
+	echo $test_speed_limit_max > /proc/sys/dev/raid/speed_limit_max
+}
+
+restore_system_speed_limit() {
+	echo $system_speed_limit_min > /proc/sys/dev/raid/speed_limit_max
+	echo $system_speed_limit_max > /proc/sys/dev/raid/speed_limit_max
+}
+
+is_raid_foreign() {
+
+	name=$1
+	# super1 uses this formula strlen(homehost)+1+strlen(name) < 32
+	# to decide if an array is foreign or local. It adds homehost if
+	# one array is local
+	hostname=$(hostname)
+	if [ `expr length "$(hostname)$name"` -lt 31 ]; then
+		is_foreign="no"
+	else
+		is_foreign="yes"
+	fi
+}
+
+record_selinux() {
+	sys_selinux=`getenforce`
+	setenforce Permissive
+}
+
+restore_selinux() {
+	setenforce $sys_selinux
+}
+
+setup_systemd_env() {
+	warn "Warning! Test suite will set up systemd environment!\n"
+	echo "Use \"systemctl show-environment\" to show systemd environment variables"
+	for env_var in $devname_as_serial_flag $no_platform_flag
+	do
+		systemctl set-environment $env_var
+		echo "Added $env_var" to systemd environment, use \
+		     \"systemctl unset-environment $env_var\" to remove it.
+	done
+}
+
+clean_systemd_env() {
+	for env_var in $devname_as_serial_flag $no_platform_flag
+	do
+		systemctl unset-environment $env_var
+		echo "Removed $env_var from systemd environment."
+	done
 }
 
 do_setup() {
@@ -141,6 +226,7 @@ do_setup() {
 	trap ctrl_c 2
 
 	check_env
+	setup_systemd_env
 	[ -d $logdir ] || mkdir -p $logdir
 
 	devlist=
@@ -214,6 +300,8 @@ do_setup() {
 	ulimit -c unlimited
 	[ -f /proc/mdstat ] || modprobe md_mod
 	echo 0 > /sys/module/md_mod/parameters/start_ro
+	record_system_speed_limit
+	record_selinux
 }
 
 # check various things
@@ -265,15 +353,17 @@ check() {
 		fi
 	;;
 	wait )
-		p=`cat /proc/sys/dev/raid/speed_limit_max`
-		echo 2000000 > /proc/sys/dev/raid/speed_limit_max
+		min=`cat /proc/sys/dev/raid/speed_limit_min`
+		max=`cat /proc/sys/dev/raid/speed_limit_max`
+		echo 200000 > /proc/sys/dev/raid/speed_limit_max
 		sleep 0.1
 		while grep -Eq '(resync|recovery|reshape|check|repair) *=' /proc/mdstat ||
 			grep -v idle > /dev/null /sys/block/md*/md/sync_action
 		do
 			sleep 0.5
 		done
-		echo $p > /proc/sys/dev/raid/speed_limit_max
+		echo $min > /proc/sys/dev/raid/speed_limit_min
+		echo $max > /proc/sys/dev/raid/speed_limit_max
 	;;
 	state )
 		grep -sq "blocks.*\[$2\]\$" /proc/mdstat ||

@@ -567,6 +567,9 @@ static int select_devices(struct mddev_dev *devlist,
 			tmpdev->used = 1;
 			content = *contentp;
 
+			if (!st)
+				return -1;
+
 			if (!st->sb) {
 				/* we need sb from one of the spares */
 				int dfd = dev_open(tmpdev->devname, O_RDONLY);
@@ -652,7 +655,9 @@ static int load_devices(struct devs *devices, char *devmap,
 			/* prepare useful information in info structures */
 			struct stat stb2;
 			int err;
-			fstat(mdfd, &stb2);
+
+			if (fstat(mdfd, &stb2) != 0)
+				goto error;
 
 			if (c->update == UOPT_UUID && !ident->uuid_set)
 				random_uuid((__u8 *)ident->uuid);
@@ -675,13 +680,10 @@ static int load_devices(struct devs *devices, char *devmap,
 				       devname);
 				if (dfd >= 0)
 					close(dfd);
-				close(mdfd);
-				free(devices);
-				free(devmap);
 				tst->ss->free_super(tst);
 				free(tst);
 				*stp = st;
-				return -1;
+				goto error;
 			}
 			tst->ss->getinfo_super(tst, content, devmap + devcnt * content->array.raid_disks);
 
@@ -715,12 +717,9 @@ static int load_devices(struct devs *devices, char *devmap,
 					       map_num(update_options, c->update), tst->ss->name);
 				tst->ss->free_super(tst);
 				free(tst);
-				close(mdfd);
 				close(dfd);
-				free(devices);
-				free(devmap);
 				*stp = st;
-				return -1;
+				goto error;
 			}
 			if (c->update == UOPT_UUID &&
 			    !ident->uuid_set) {
@@ -751,18 +750,23 @@ static int load_devices(struct devs *devices, char *devmap,
 				       devname);
 				if (dfd >= 0)
 					close(dfd);
-				close(mdfd);
-				free(devices);
-				free(devmap);
 				tst->ss->free_super(tst);
 				free(tst);
 				*stp = st;
-				return -1;
+				goto error;
 			}
 			tst->ss->getinfo_super(tst, content, devmap + devcnt * content->array.raid_disks);
 		}
 
-		fstat(dfd, &stb);
+		if (fstat(dfd, &stb) != 0) {
+			close(dfd);
+			free(devices);
+			free(devmap);
+			tst->ss->free_super(tst);
+			free(tst);
+			*stp = st;
+			return -1;
+		}
 		close(dfd);
 
 		if (c->verbose > 0)
@@ -814,12 +818,12 @@ static int load_devices(struct devs *devices, char *devmap,
 			if (i >= bestcnt) {
 				int newbestcnt = i+10;
 				int *newbest = xmalloc(sizeof(int)*newbestcnt);
-				int c;
-				for (c=0; c < newbestcnt; c++)
-					if (c < bestcnt)
-						newbest[c] = best[c];
+				int cc;
+				for (cc = 0; cc < newbestcnt; cc++)
+					if (cc < bestcnt)
+						newbest[cc] = best[cc];
 					else
-						newbest[c] = -1;
+						newbest[cc] = -1;
 				if (best)free(best);
 				best = newbest;
 				bestcnt = newbestcnt;
@@ -842,12 +846,9 @@ static int load_devices(struct devs *devices, char *devmap,
 				       inargv ? "the list" :
 				       "the\n      DEVICE list in mdadm.conf"
 					);
-				close(mdfd);
-				free(devices);
-				free(devmap);
 				free(best);
 				*stp = st;
-				return -1;
+				goto error;
 			}
 			if (best[i] == -1 || (devices[best[i]].i.events
 					      < devices[devcnt].i.events))
@@ -863,6 +864,13 @@ static int load_devices(struct devs *devices, char *devmap,
 	*bestp = best;
 	*stp = st;
 	return devcnt;
+
+error:
+	close(mdfd);
+	free(devices);
+	free(devmap);
+	return -1;
+
 }
 
 static int force_array(struct mdinfo *content,
@@ -1197,9 +1205,7 @@ static int start_array(int mdfd,
 			rv = sysfs_set_str(content, NULL,
 					   "array_state", "readonly");
 			if (rv == 0)
-				rv = Grow_continue(mdfd, st, content,
-						   c->backup_file, 0,
-						   c->freeze_reshape);
+				rv = Grow_continue(mdfd, st, content, 0, c);
 		} else if (c->readonly &&
 			   sysfs_attribute_available(content, NULL,
 						     "array_state")) {
@@ -1211,23 +1217,19 @@ static int start_array(int mdfd,
 		if (rv == 0) {
 			sysfs_rules_apply(mddev, content);
 			if (c->verbose >= 0) {
-				pr_err("%s has been started with %d drive%s",
+				pr_info("%s has been started with %d drive%s",
 				       mddev, okcnt, okcnt==1?"":"s");
 				if (okcnt < (unsigned)content->array.raid_disks)
-					fprintf(stderr, " (out of %d)",
-						content->array.raid_disks);
+					printf(" (out of %d)", content->array.raid_disks);
 				if (rebuilding_cnt)
-					fprintf(stderr, "%s %d rebuilding",
-						sparecnt?",":" and",
+					printf("%s %d rebuilding", sparecnt?",":" and",
 						rebuilding_cnt);
 				if (sparecnt)
-					fprintf(stderr, " and %d spare%s",
-						sparecnt,
+					printf(" and %d spare%s", sparecnt,
 						sparecnt == 1 ? "" : "s");
 				if (content->journal_clean)
-					fprintf(stderr, " and %d journal",
-						journalcnt);
-				fprintf(stderr, ".\n");
+					printf(" and %d journal", journalcnt);
+				printf(".\n");
 			}
 			if (content->reshape_active &&
 			    is_level456(content->array.level)) {
@@ -1494,8 +1496,11 @@ try_again:
 		mp = map_by_uuid(&map, content->uuid);
 	if (mp) {
 		struct mdinfo *dv;
-		/* array already exists. */
 		pre_exist = sysfs_read(-1, mp->devnm, GET_LEVEL|GET_DEVS);
+		if (!pre_exist)
+			goto out;
+
+		/* array already exists. */
 		if (pre_exist->array.level != UnSet) {
 			pr_err("Found some drive for an array that is already active: %s\n",
 			       mp->path);
@@ -1607,6 +1612,7 @@ try_again:
 		err = assemble_container_content(st, mdfd, content, c,
 						 chosen_name, NULL);
 		close(mdfd);
+		sysfs_free(pre_exist);
 		return err;
 	}
 
@@ -1746,23 +1752,27 @@ try_again:
 				 : (O_RDONLY|O_EXCL)))< 0) {
 			pr_err("Cannot open %s: %s\n",
 			       devices[j].devname, strerror(errno));
+			free(avail);
 			goto out;
 		}
 		if (st->ss->load_super(st,fd, NULL)) {
 			close(fd);
 			pr_err("RAID superblock has disappeared from %s\n",
 			       devices[j].devname);
+			free(avail);
 			goto out;
 		}
 		close(fd);
 	}
 	if (st->sb == NULL) {
 		pr_err("No suitable drives found for %s\n", mddev);
+		free(avail);
 		goto out;
 	}
 	st->ss->getinfo_super(st, content, NULL);
 	if (sysfs_init(content, mdfd, NULL)) {
 		pr_err("Unable to initialize sysfs\n");
+		free(avail);
 		goto out;
 	}
 
@@ -1825,12 +1835,14 @@ try_again:
 		if (fd < 0) {
 			pr_err("Could not open %s for write - cannot Assemble array.\n",
 			       devices[chosen_drive].devname);
+			free(avail);
 			goto out;
 		}
 		if (st->ss->store_super(st, fd)) {
 			close(fd);
 			pr_err("Could not re-write superblock on %s\n",
 			       devices[chosen_drive].devname);
+			free(avail);
 			goto out;
 		}
 		if (c->verbose >= 0)
@@ -1889,6 +1901,7 @@ try_again:
 			pr_err("Failed to restore critical section for reshape, sorry.\n");
 			if (c->backup_file == NULL)
 				cont_err("Possibly you needed to specify the --backup-file\n");
+			free(avail);
 			goto out;
 		}
 	}
@@ -1917,6 +1930,7 @@ try_again:
 	if (rv == 1 && !pre_exist)
 		ioctl(mdfd, STOP_ARRAY, NULL);
 	free(devices);
+	free(avail);
 out:
 	map_unlock(&map);
 	if (rv == 0) {
@@ -1952,11 +1966,14 @@ out:
 		close(mdfd);
 
 	free(best);
+	sysfs_free(pre_exist);
+
 	/* '2' means 'OK, but not started yet' */
 	if (rv == -1) {
 		free(devices);
 		return 1;
 	}
+	close(mdfd);
 	return rv == 2 ? 0 : rv;
 }
 
@@ -2175,13 +2192,12 @@ int assemble_container_content(struct supertype *st, int mdfd,
 			if (!mdmon_running(st->container_devnm))
 				start_mdmon(st->container_devnm);
 			ping_monitor(st->container_devnm);
-			if (mdmon_running(st->container_devnm) &&
-			    st->update_tail == NULL)
+			if (wait_for_mdmon(st->container_devnm) == MDADM_STATUS_SUCCESS &&
+			    !st->update_tail)
 				st->update_tail = &st->updates;
 		}
 
-		err = Grow_continue(mdfd, st, content, c->backup_file,
-				    0, c->freeze_reshape);
+		err = Grow_continue(mdfd, st, content, 0, c);
 	} else switch(content->array.level) {
 		case LEVEL_LINEAR:
 		case LEVEL_MULTIPATH:

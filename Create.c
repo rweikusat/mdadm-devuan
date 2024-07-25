@@ -178,6 +178,7 @@ static int wait_for_zero_forks(int *zero_pids, int count)
 	bool interrupted = false;
 	sigset_t sigset;
 	ssize_t s;
+	pid_t pid;
 
 	for (i = 0; i < count; i++)
 		if (zero_pids[i])
@@ -196,7 +197,7 @@ static int wait_for_zero_forks(int *zero_pids, int count)
 		return 1;
 	}
 
-	while (1) {
+	while (wait_count) {
 		s = read(sfd, &fdsi, sizeof(fdsi));
 		if (s != sizeof(fdsi)) {
 			pr_err("Invalid signalfd read: %s\n", strerror(errno));
@@ -209,22 +210,23 @@ static int wait_for_zero_forks(int *zero_pids, int count)
 			pr_info("Interrupting zeroing processes, please wait...\n");
 			interrupted = true;
 		} else if (fdsi.ssi_signo == SIGCHLD) {
-			if (!--wait_count)
-				break;
+			for (i = 0; i < count; i++) {
+				if (!zero_pids[i])
+					continue;
+
+				pid = waitpid(zero_pids[i], &wstatus, WNOHANG);
+				if (pid <= 0)
+					continue;
+
+				zero_pids[i] = 0;
+				if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus))
+					ret = 1;
+				wait_count--;
+			}
 		}
 	}
 
 	close(sfd);
-
-	for (i = 0; i < count; i++) {
-		if (!zero_pids[i])
-			continue;
-
-		waitpid(zero_pids[i], &wstatus, 0);
-		zero_pids[i] = 0;
-		if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus))
-			ret = 1;
-	}
 
 	if (interrupted) {
 		pr_err("zeroing interrupted!\n");
@@ -295,7 +297,7 @@ static int add_disk_to_super(int mdfd, struct shape *s, struct context *c,
 	if (st->ss->add_to_super(st, &info->disk, fd, dv->devname,
 				 dv->data_offset)) {
 		ioctl(mdfd, STOP_ARRAY, NULL);
-		close(fd);
+		close_fd(&fd);
 		return 1;
 	}
 	st->ss->getinfo_super(st, info, NULL);
@@ -399,6 +401,7 @@ static int add_disks(int mdfd, struct mdinfo *info, struct shape *s,
 	 */
 	sigemptyset(&sigset);
 	sigaddset(&sigset, SIGINT);
+	sigaddset(&sigset, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &sigset, &orig_sigset);
 	memset(zero_pids, 0, sizeof(zero_pids));
 
@@ -965,6 +968,13 @@ int Create(struct supertype *st, struct mddev_ident *ident, int subdevs,
 		return 1;
 	}
 
+	if (st->ss == &super_imsm && s->level == 10 && s->raiddisks > 4) {
+		/* Print no matter runstop was specifed */
+		pr_err("Warning! VROC UEFI driver does not support RAID10 in requested layout.\n");
+		pr_err("Array won't be suitable as boot device.\n");
+		warn = 1;
+	}
+
 	if (!have_container && s->level > 0 && ((maxsize-s->size)*100 > maxsize)) {
 		if (c->runstop != 1 || c->verbose >= 0)
 			pr_err("largest drive (%s) exceeds size (%lluK) by more than 1%%\n",
@@ -984,7 +994,7 @@ int Create(struct supertype *st, struct mddev_ident *ident, int subdevs,
 
 	if (warn) {
 		if (c->runstop!= 1) {
-			if (!ask("Continue creating array? ")) {
+			if (!ask("Continue creating array")) {
 				pr_err("create aborted.\n");
 				return 1;
 			}
@@ -1334,9 +1344,11 @@ int Create(struct supertype *st, struct mddev_ident *ident, int subdevs,
 		if (c->verbose >= 0)
 			pr_info("array %s started.\n", chosen_name);
 		if (st->ss->external && st->container_devnm[0]) {
-			if (need_mdmon)
+			if (need_mdmon) {
 				start_mdmon(st->container_devnm);
-
+				if (wait_for_mdmon_control_socket(st->container_devnm) != MDADM_STATUS_SUCCESS)
+					goto abort;
+			}
 			ping_monitor(st->container_devnm);
 			close(container_fd);
 		}
@@ -1358,8 +1370,8 @@ int Create(struct supertype *st, struct mddev_ident *ident, int subdevs,
 	map_remove(&map, fd2devnm(mdfd));
 	map_unlock(&map);
 
-	if (mdfd >= 0)
-		close(mdfd);
+	close_fd(&mdfd);
+	close_fd(&container_fd);
 
 	dev_policy_free(custom_pols);
 	return 1;
