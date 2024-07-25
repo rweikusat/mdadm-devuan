@@ -32,14 +32,19 @@
 /* MPB == Metadata Parameter Block */
 #define MPB_SIGNATURE "Intel Raid ISM Cfg Sig. "
 #define MPB_SIG_LEN (strlen(MPB_SIGNATURE))
-#define MPB_VERSION_RAID0 "1.0.00"
-#define MPB_VERSION_RAID1 "1.1.00"
-#define MPB_VERSION_MANY_VOLUMES_PER_ARRAY "1.2.00"
-#define MPB_VERSION_3OR4_DISK_ARRAY "1.2.01"
-#define MPB_VERSION_RAID5 "1.2.02"
-#define MPB_VERSION_5OR6_DISK_ARRAY "1.2.04"
-#define MPB_VERSION_CNG "1.2.06"
+
+/* Legacy IMSM versions:
+ * MPB_VERSION_RAID0 1.0.00
+ * MPB_VERSION_RAID1 1.1.00
+ * MPB_VERSION_MANY_VOLUMES_PER_ARRAY 1.2.00
+ * MPB_VERSION_3OR4_DISK_ARRAY 1.2.01
+ * MPB_VERSION_RAID5 1.2.02
+ * MPB_VERSION_5OR6_DISK_ARRAY 1.2.04
+ * MPB_VERSION_CNG 1.2.06
+ */
+
 #define MPB_VERSION_ATTRIBS "1.3.00"
+#define MPB_VERSION_ATTRIBS_JD "2.0.00"
 #define MAX_SIGNATURE_LENGTH  32
 #define MAX_RAID_SERIAL_LEN   16
 
@@ -57,6 +62,8 @@
 #define MPB_ATTRIB_RAIDCNG		__cpu_to_le32(0x00000020)
 /* supports expanded stripe sizes of  256K, 512K and 1MB */
 #define MPB_ATTRIB_EXP_STRIPE_SIZE	__cpu_to_le32(0x00000040)
+/* supports RAID10 with more than 4 drives */
+#define MPB_ATTRIB_RAID10_EXT		__cpu_to_le32(0x00000080)
 
 /* The OROM Support RST Caching of Volumes */
 #define MPB_ATTRIB_NVM			__cpu_to_le32(0x02000000)
@@ -84,6 +91,7 @@
 					MPB_ATTRIB_RAID10          | \
 					MPB_ATTRIB_RAID5           | \
 					MPB_ATTRIB_EXP_STRIPE_SIZE | \
+					MPB_ATTRIB_RAID10_EXT      | \
 					MPB_ATTRIB_BBM)
 
 /* Define attributes that are unused but not harmful */
@@ -166,7 +174,8 @@ struct imsm_map {
 	__u8  raid_level;
 #define IMSM_T_RAID0 0
 #define IMSM_T_RAID1 1
-#define IMSM_T_RAID5 5		/* since metadata version 1.2.02 ? */
+#define IMSM_T_RAID5 5
+#define IMSM_T_RAID10 10
 	__u8  num_members;	/* number of member disks */
 	__u8  num_domains;	/* number of parity domains */
 	__u8  failed_disk_num;  /* valid only when state is degraded */
@@ -514,6 +523,7 @@ enum imsm_reshape_type {
 	CH_TAKEOVER,
 	CH_MIGRATION,
 	CH_ARRAY_SIZE,
+	CH_ABORT
 };
 
 /* definition of messages passed to imsm_process_update */
@@ -1259,14 +1269,42 @@ static int get_imsm_disk_slot(struct imsm_map *map, const unsigned int idx)
 
 	return IMSM_STATUS_ERROR;
 }
+/**
+ * update_imsm_raid_level() - update raid level appropriately in &imsm_map.
+ * @map:	&imsm_map pointer.
+ * @new_level:	MD style level.
+ *
+ * For backward compatibility reasons we need to differentiate RAID10.
+ * In the past IMSM RAID10 was presented as RAID1.
+ * Keep compatibility unless it is not explicitly updated by UEFI driver.
+ *
+ * Routine needs num_members to be set and (optionally) raid_level.
+ */
+static void update_imsm_raid_level(struct imsm_map *map, int new_level)
+{
+	if (new_level != IMSM_T_RAID10) {
+		map->raid_level = new_level;
+		return;
+	}
+
+	if (map->num_members == 4) {
+		if (map->raid_level == IMSM_T_RAID10 || map->raid_level == IMSM_T_RAID1)
+			return;
+
+		map->raid_level = IMSM_T_RAID1;
+		return;
+	}
+
+	map->raid_level = IMSM_T_RAID10;
+}
 
 static int get_imsm_raid_level(struct imsm_map *map)
 {
-	if (map->raid_level == 1) {
+	if (map->raid_level == IMSM_T_RAID1) {
 		if (map->num_members == 2)
-			return 1;
+			return IMSM_T_RAID1;
 		else
-			return 10;
+			return IMSM_T_RAID10;
 	}
 
 	return map->raid_level;
@@ -2098,91 +2136,18 @@ void convert_from_4k(struct intel_super *super)
 	mpb->check_sum = __gen_imsm_checksum(mpb);
 }
 
-/*******************************************************************************
- * function: imsm_check_attributes
- * Description: Function checks if features represented by attributes flags
- *		are supported by mdadm.
- * Parameters:
- *		attributes - Attributes read from metadata
- * Returns:
- *		0 - passed attributes contains unsupported features flags
- *		1 - all features are supported
- ******************************************************************************/
-static int imsm_check_attributes(__u32 attributes)
+/**
+ * imsm_check_attributes() - Check if features represented by attributes flags are supported.
+ *
+ * @attributes: attributes read from metadata.
+ * Returns: true if all features are supported, false otherwise.
+ */
+static bool imsm_check_attributes(__u32 attributes)
 {
-	int ret_val = 1;
-	__u32 not_supported = MPB_ATTRIB_SUPPORTED^0xffffffff;
+	if ((attributes & (MPB_ATTRIB_SUPPORTED | MPB_ATTRIB_IGNORED)) == attributes)
+		return true;
 
-	not_supported &= ~MPB_ATTRIB_IGNORED;
-
-	not_supported &= attributes;
-	if (not_supported) {
-		pr_err("(IMSM): Unsupported attributes : %x\n",
-			(unsigned)__le32_to_cpu(not_supported));
-		if (not_supported & MPB_ATTRIB_CHECKSUM_VERIFY) {
-			dprintf("\t\tMPB_ATTRIB_CHECKSUM_VERIFY \n");
-			not_supported ^= MPB_ATTRIB_CHECKSUM_VERIFY;
-		}
-		if (not_supported & MPB_ATTRIB_2TB) {
-			dprintf("\t\tMPB_ATTRIB_2TB\n");
-			not_supported ^= MPB_ATTRIB_2TB;
-		}
-		if (not_supported & MPB_ATTRIB_RAID0) {
-			dprintf("\t\tMPB_ATTRIB_RAID0\n");
-			not_supported ^= MPB_ATTRIB_RAID0;
-		}
-		if (not_supported & MPB_ATTRIB_RAID1) {
-			dprintf("\t\tMPB_ATTRIB_RAID1\n");
-			not_supported ^= MPB_ATTRIB_RAID1;
-		}
-		if (not_supported & MPB_ATTRIB_RAID10) {
-			dprintf("\t\tMPB_ATTRIB_RAID10\n");
-			not_supported ^= MPB_ATTRIB_RAID10;
-		}
-		if (not_supported & MPB_ATTRIB_RAID1E) {
-			dprintf("\t\tMPB_ATTRIB_RAID1E\n");
-			not_supported ^= MPB_ATTRIB_RAID1E;
-		}
-		if (not_supported & MPB_ATTRIB_RAID5) {
-		dprintf("\t\tMPB_ATTRIB_RAID5\n");
-			not_supported ^= MPB_ATTRIB_RAID5;
-		}
-		if (not_supported & MPB_ATTRIB_RAIDCNG) {
-			dprintf("\t\tMPB_ATTRIB_RAIDCNG\n");
-			not_supported ^= MPB_ATTRIB_RAIDCNG;
-		}
-		if (not_supported & MPB_ATTRIB_BBM) {
-			dprintf("\t\tMPB_ATTRIB_BBM\n");
-		not_supported ^= MPB_ATTRIB_BBM;
-		}
-		if (not_supported & MPB_ATTRIB_CHECKSUM_VERIFY) {
-			dprintf("\t\tMPB_ATTRIB_CHECKSUM_VERIFY (== MPB_ATTRIB_LEGACY)\n");
-			not_supported ^= MPB_ATTRIB_CHECKSUM_VERIFY;
-		}
-		if (not_supported & MPB_ATTRIB_EXP_STRIPE_SIZE) {
-			dprintf("\t\tMPB_ATTRIB_EXP_STRIP_SIZE\n");
-			not_supported ^= MPB_ATTRIB_EXP_STRIPE_SIZE;
-		}
-		if (not_supported & MPB_ATTRIB_2TB_DISK) {
-			dprintf("\t\tMPB_ATTRIB_2TB_DISK\n");
-			not_supported ^= MPB_ATTRIB_2TB_DISK;
-		}
-		if (not_supported & MPB_ATTRIB_NEVER_USE2) {
-			dprintf("\t\tMPB_ATTRIB_NEVER_USE2\n");
-			not_supported ^= MPB_ATTRIB_NEVER_USE2;
-		}
-		if (not_supported & MPB_ATTRIB_NEVER_USE) {
-			dprintf("\t\tMPB_ATTRIB_NEVER_USE\n");
-			not_supported ^= MPB_ATTRIB_NEVER_USE;
-		}
-
-		if (not_supported)
-			dprintf("(IMSM): Unknown attributes : %x\n", not_supported);
-
-		ret_val = 0;
-	}
-
-	return ret_val;
+	return false;
 }
 
 static void getinfo_super_imsm(struct supertype *st, struct mdinfo *info, char *map);
@@ -2210,11 +2175,10 @@ static void examine_super_imsm(struct supertype *st, char *homehost)
 	creation_time = __le64_to_cpu(mpb->creation_time);
 	printf("  Creation Time : %.24s\n",
 		creation_time ? ctime(&creation_time) : "Unknown");
-	printf("     Attributes : ");
-	if (imsm_check_attributes(mpb->attributes))
-		printf("All supported\n");
-	else
-		printf("not supported\n");
+
+	printf("     Attributes : %08x (%s)\n", mpb->attributes,
+	       imsm_check_attributes(mpb->attributes) ? "supported" : "not supported");
+
 	getinfo_super_imsm(st, &info, NULL);
 	fname_from_uuid(&info, nbuf);
 	printf("           UUID : %s\n", nbuf + 5);
@@ -2354,7 +2318,7 @@ void print_encryption_information(int disk_fd, enum sys_dev_type hba_type)
 {
 	struct encryption_information information = {0};
 	mdadm_status_t status = MDADM_STATUS_SUCCESS;
-	const char *indent = "                  ";
+	const char *indent = "                    ";
 
 	switch (hba_type) {
 	case SYS_DEV_VMD:
@@ -2379,7 +2343,8 @@ void print_encryption_information(int disk_fd, enum sys_dev_type hba_type)
 	       get_encryption_status_string(information.status));
 }
 
-static int ahci_enumerate_ports(struct sys_dev *hba, int port_count, int host_base, int verbose)
+static int ahci_enumerate_ports(struct sys_dev *hba, unsigned long port_count, int host_base,
+				int verbose)
 {
 	/* dump an unsorted list of devices attached to AHCI Intel storage
 	 * controller, as well as non-connected ports
@@ -2393,7 +2358,7 @@ static int ahci_enumerate_ports(struct sys_dev *hba, int port_count, int host_ba
 
 	if (port_count > (int)sizeof(port_mask) * 8) {
 		if (verbose > 0)
-			pr_err("port_count %d out of range\n", port_count);
+			pr_err("port_count %ld out of range\n", port_count);
 		return 2;
 	}
 
@@ -2535,11 +2500,11 @@ static int ahci_enumerate_ports(struct sys_dev *hba, int port_count, int host_ba
 	if (dir)
 		closedir(dir);
 	if (err == 0) {
-		int i;
+		unsigned long i;
 
 		for (i = 0; i < port_count; i++)
-			if (port_mask & (1 << i))
-				printf("          Port%d : - no device attached -\n", i);
+			if (port_mask & (1L << i))
+				printf("          Port%ld : - no device attached -\n", i);
 	}
 
 	return err;
@@ -2652,6 +2617,15 @@ static int ahci_get_port_count(const char *hba_path, int *port_count)
 	return host_base;
 }
 
+static void print_imsm_level_capability(const struct imsm_orom *orom)
+{
+	int idx;
+
+	for (idx = 0; imsm_level_ops[idx].name; idx++)
+		if (imsm_level_ops[idx].is_level_supported(orom))
+			printf("%s ", imsm_level_ops[idx].name);
+}
+
 static void print_imsm_capability(const struct imsm_orom *orom)
 {
 	printf("       Platform : Intel(R) ");
@@ -2670,12 +2644,11 @@ static void print_imsm_capability(const struct imsm_orom *orom)
 			printf("        Version : %d.%d.%d.%d\n", orom->major_ver,
 			       orom->minor_ver, orom->hotfix_ver, orom->build);
 	}
-	printf("    RAID Levels :%s%s%s%s%s\n",
-	       imsm_orom_has_raid0(orom) ? " raid0" : "",
-	       imsm_orom_has_raid1(orom) ? " raid1" : "",
-	       imsm_orom_has_raid1e(orom) ? " raid1e" : "",
-	       imsm_orom_has_raid10(orom) ? " raid10" : "",
-	       imsm_orom_has_raid5(orom) ? " raid5" : "");
+
+	printf("    RAID Levels : ");
+	print_imsm_level_capability(orom);
+	printf("\n");
+
 	printf("    Chunk Sizes :%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
 	       imsm_orom_has_chunk(orom, 2) ? " 2k" : "",
 	       imsm_orom_has_chunk(orom, 4) ? " 4k" : "",
@@ -2710,12 +2683,11 @@ static void print_imsm_capability_export(const struct imsm_orom *orom)
 	if (orom->major_ver || orom->minor_ver || orom->hotfix_ver || orom->build)
 		printf("IMSM_VERSION=%d.%d.%d.%d\n", orom->major_ver, orom->minor_ver,
 				orom->hotfix_ver, orom->build);
-	printf("IMSM_SUPPORTED_RAID_LEVELS=%s%s%s%s%s\n",
-			imsm_orom_has_raid0(orom) ? "raid0 " : "",
-			imsm_orom_has_raid1(orom) ? "raid1 " : "",
-			imsm_orom_has_raid1e(orom) ? "raid1e " : "",
-			imsm_orom_has_raid5(orom) ? "raid10 " : "",
-			imsm_orom_has_raid10(orom) ? "raid5 " : "");
+
+	printf("IMSM_SUPPORTED_RAID_LEVELS=");
+	print_imsm_level_capability(orom);
+	printf("\n");
+
 	printf("IMSM_SUPPORTED_CHUNK_SIZES=%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
 			imsm_orom_has_chunk(orom, 2) ? "2k " : "",
 			imsm_orom_has_chunk(orom, 4) ? "4k " : "",
@@ -4268,7 +4240,10 @@ load_imsm_disk(int fd, struct intel_super *super, char *devname, int keep_fd)
 
 	dl = xcalloc(1, sizeof(*dl));
 
-	fstat(fd, &stb);
+	if (fstat(fd, &stb) != 0) {
+		free(dl);
+		return 1;
+	}
 	dl->major = major(stb.st_rdev);
 	dl->minor = minor(stb.st_rdev);
 	dl->next = super->disks;
@@ -5476,51 +5451,48 @@ static unsigned long long info_to_blocks_per_member(mdu_array_info_t *info,
 		return (size * 2) & ~(info_to_blocks_per_strip(info) - 1);
 }
 
+static void imsm_write_signature(struct imsm_super *mpb)
+{
+	/* It is safer to eventually truncate version rather than left it not NULL ended */
+	snprintf((char *) mpb->sig, MAX_SIGNATURE_LENGTH, MPB_SIGNATURE MPB_VERSION_ATTRIBS);
+}
+
 static void imsm_update_version_info(struct intel_super *super)
 {
 	/* update the version and attributes */
 	struct imsm_super *mpb = super->anchor;
-	char *version;
 	struct imsm_dev *dev;
 	struct imsm_map *map;
 	int i;
 
+	mpb->attributes |= MPB_ATTRIB_CHECKSUM_VERIFY;
+
 	for (i = 0; i < mpb->num_raid_devs; i++) {
 		dev = get_imsm_dev(super, i);
 		map = get_imsm_map(dev, MAP_0);
+
 		if (__le32_to_cpu(dev->size_high) > 0)
 			mpb->attributes |= MPB_ATTRIB_2TB;
 
-		/* FIXME detect when an array spans a port multiplier */
-		#if 0
-		mpb->attributes |= MPB_ATTRIB_PM;
-		#endif
-
-		if (mpb->num_raid_devs > 1 ||
-		    mpb->attributes != MPB_ATTRIB_CHECKSUM_VERIFY) {
-			version = MPB_VERSION_ATTRIBS;
-			switch (get_imsm_raid_level(map)) {
-			case 0: mpb->attributes |= MPB_ATTRIB_RAID0; break;
-			case 1: mpb->attributes |= MPB_ATTRIB_RAID1; break;
-			case 10: mpb->attributes |= MPB_ATTRIB_RAID10; break;
-			case 5: mpb->attributes |= MPB_ATTRIB_RAID5; break;
-			}
-		} else {
-			if (map->num_members >= 5)
-				version = MPB_VERSION_5OR6_DISK_ARRAY;
-			else if (dev->status == DEV_CLONE_N_GO)
-				version = MPB_VERSION_CNG;
-			else if (get_imsm_raid_level(map) == 5)
-				version = MPB_VERSION_RAID5;
-			else if (map->num_members >= 3)
-				version = MPB_VERSION_3OR4_DISK_ARRAY;
-			else if (get_imsm_raid_level(map) == 1)
-				version = MPB_VERSION_RAID1;
-			else
-				version = MPB_VERSION_RAID0;
+		switch (get_imsm_raid_level(map)) {
+		case IMSM_T_RAID0:
+			mpb->attributes |= MPB_ATTRIB_RAID0;
+			break;
+		case IMSM_T_RAID1:
+			mpb->attributes |= MPB_ATTRIB_RAID1;
+			break;
+		case IMSM_T_RAID5:
+			mpb->attributes |= MPB_ATTRIB_RAID5;
+			break;
+		case IMSM_T_RAID10:
+			mpb->attributes |= MPB_ATTRIB_RAID10;
+			if (map->num_members > 4)
+				mpb->attributes |= MPB_ATTRIB_RAID10_EXT;
+			break;
 		}
-		strcpy(((char *) mpb->sig) + strlen(MPB_SIGNATURE), version);
 	}
+
+	imsm_write_signature(mpb);
 }
 
 /**
@@ -5678,7 +5650,7 @@ static int init_super_imsm_volume(struct supertype *st, mdu_array_info_t *info,
 	set_pba_of_lba0(map, super->create_offset);
 	map->blocks_per_strip = __cpu_to_le16(info_to_blocks_per_strip(info));
 	map->failed_disk_num = ~0;
-	if (info->level > 0)
+	if (info->level > IMSM_T_RAID0)
 		map->map_state = (info->state ? IMSM_T_STATE_NORMAL
 				  : IMSM_T_STATE_UNINITIALIZED);
 	else
@@ -5686,16 +5658,15 @@ static int init_super_imsm_volume(struct supertype *st, mdu_array_info_t *info,
 						      IMSM_T_STATE_NORMAL;
 	map->ddf = 1;
 
-	if (info->level == 1 && info->raid_disks > 2) {
+	if (info->level == IMSM_T_RAID1 && info->raid_disks > 2) {
 		free(dev);
 		free(dv);
-		pr_err("imsm does not support more than 2 disksin a raid1 volume\n");
+		pr_err("imsm does not support more than 2 disks in a raid1 volume\n");
 		return 0;
 	}
+	map->num_members = info->raid_disks;
 
-	map->raid_level = info->level;
-	if (info->level == 10)
-		map->raid_level = 1;
+	update_imsm_raid_level(map, info->level);
 	set_num_domains(map);
 
 	size_per_member += NUM_BLOCKS_DIRTY_STRIPE_REGION;
@@ -5703,7 +5674,6 @@ static int init_super_imsm_volume(struct supertype *st, mdu_array_info_t *info,
 							     size_per_member /
 							     BLOCKS_PER_KB));
 
-	map->num_members = info->raid_disks;
 	update_num_data_stripes(map, array_blocks);
 	for (i = 0; i < map->num_members; i++) {
 		/* initialized in add_to_super */
@@ -5751,7 +5721,6 @@ static int init_super_imsm(struct supertype *st, mdu_array_info_t *info,
 	struct intel_super *super;
 	struct imsm_super *mpb;
 	size_t mpb_size;
-	char *version;
 
 	if (data_offset != INVALID_SECTORS) {
 		pr_err("data-offset not supported by imsm\n");
@@ -5794,13 +5763,7 @@ static int init_super_imsm(struct supertype *st, mdu_array_info_t *info,
 		return 0;
 	}
 
-	mpb->attributes = MPB_ATTRIB_CHECKSUM_VERIFY;
-
-	version = (char *) mpb->sig;
-	strcpy(version, MPB_SIGNATURE);
-	version += strlen(MPB_SIGNATURE);
-	strcpy(version, MPB_VERSION_RAID0);
-
+	imsm_update_version_info(super);
 	return 1;
 }
 
@@ -6022,7 +5985,8 @@ static int add_to_super_imsm(struct supertype *st, mdu_disk_info_t *dk,
 	if (super->current_vol >= 0)
 		return add_to_super_imsm_volume(st, dk, fd, devname);
 
-	fstat(fd, &stb);
+	if (fstat(fd, &stb) != 0)
+		return 1;
 	dd = xcalloc(sizeof(*dd), 1);
 	dd->major = major(stb.st_rdev);
 	dd->minor = minor(stb.st_rdev);
@@ -6174,7 +6138,6 @@ static union {
 
 static int write_super_imsm_spare(struct intel_super *super, struct dl *d)
 {
-	struct imsm_super *mpb = super->anchor;
 	struct imsm_super *spare = &spare_record.anchor;
 	__u32 sum;
 
@@ -6183,14 +6146,11 @@ static int write_super_imsm_spare(struct intel_super *super, struct dl *d)
 
 	spare->mpb_size = __cpu_to_le32(sizeof(struct imsm_super));
 	spare->generation_num = __cpu_to_le32(1UL);
-	spare->attributes = MPB_ATTRIB_CHECKSUM_VERIFY;
 	spare->num_disks = 1;
 	spare->num_raid_devs = 0;
-	spare->cache_size = mpb->cache_size;
 	spare->pwr_cycle_count = __cpu_to_le32(1);
 
-	snprintf((char *) spare->sig, MAX_SIGNATURE_LENGTH,
-		 MPB_SIGNATURE MPB_VERSION_RAID0);
+	imsm_write_signature(spare);
 
 	spare->disk[0] = d->disk;
 	if (__le32_to_cpu(d->disk.total_blocks_hi) > 0)
@@ -6965,26 +6925,41 @@ static unsigned long long merge_extents(struct intel_super *super, const bool ex
 	return free_size - reservation_size;
 }
 
-static int is_raid_level_supported(const struct imsm_orom *orom, int level, int raiddisks)
+/**
+ * is_raid_level_supported() - check if this count of drives and level is supported by platform.
+ * @orom: hardware properties, could be NULL.
+ * @level: requested raid level.
+ * @raiddisks: requested disk count.
+ *
+ * IMSM UEFI/OROM does not provide information about supported count of raid disks
+ * for particular level. That is why it is hardcoded.
+ * It is recommended to not allow of usage other levels than supported,
+ * IMSM code is not tested against different level implementations.
+ *
+ * Return: true if supported, false otherwise.
+ */
+static bool is_raid_level_supported(const struct imsm_orom *orom, int level, int raiddisks)
 {
-	if (level < 0 || level == 6 || level == 4)
-		return 0;
+	int idx;
 
-	/* if we have an orom prevent invalid raid levels */
-	if (orom)
-		switch (level) {
-		case 0: return imsm_orom_has_raid0(orom);
-		case 1:
-			if (raiddisks > 2)
-				return imsm_orom_has_raid1e(orom);
-			return imsm_orom_has_raid1(orom) && raiddisks == 2;
-		case 10: return imsm_orom_has_raid10(orom) && raiddisks == 4;
-		case 5: return imsm_orom_has_raid5(orom) && raiddisks > 2;
-		}
-	else
-		return 1; /* not on an Intel RAID platform so anything goes */
+	for (idx = 0; imsm_level_ops[idx].name; idx++) {
+		if (imsm_level_ops[idx].level == level)
+			break;
+	}
 
-	return 0;
+	if (!imsm_level_ops[idx].name)
+		return false;
+
+	if (!imsm_level_ops[idx].is_raiddisks_count_supported(raiddisks))
+		return false;
+
+	if (!orom)
+		return true;
+
+	if (imsm_level_ops[idx].is_level_supported(orom))
+		return true;
+
+	return false;
 }
 
 static int
@@ -7072,7 +7047,6 @@ get_devices(const char *hba_path)
 	struct md_list *dv;
 	struct dirent *ent;
 	DIR *dir;
-	int err = 0;
 
 #if DEBUG_LOOP
 	devlist = get_loop_devices();
@@ -7113,14 +7087,6 @@ get_devices(const char *hba_path)
 		dv->devname = xstrdup(buf);
 		dv->next = devlist;
 		devlist = dv;
-	}
-	if (err) {
-		while(devlist) {
-			dv = devlist;
-			devlist = devlist->next;
-			free(dv->devname);
-			free(dv);
-		}
 	}
 	closedir(dir);
 	return devlist;
@@ -7740,9 +7706,11 @@ static int validate_geometry_imsm(struct supertype *st, int level, int layout,
 				  char *dev, unsigned long long *freesize,
 				  int consistency_policy, int verbose)
 {
-	int fd, cfd;
+	struct intel_super *super = st->sb;
 	struct mdinfo *sra;
 	int is_member = 0;
+	imsm_status_t rv;
+	int fd, cfd;
 
 	/* load capability
 	 * if given unused devices create a container
@@ -7767,11 +7735,10 @@ static int validate_geometry_imsm(struct supertype *st, int level, int layout,
 	}
 
 	if (!dev) {
-		struct intel_super *super = st->sb;
-
 		/*
 		 * Autolayout mode, st->sb must be set.
 		 */
+
 		if (!super) {
 			pr_vrb("superblock must be set for autolayout, aborting\n");
 			return 0;
@@ -7782,21 +7749,22 @@ static int validate_geometry_imsm(struct supertype *st, int level, int layout,
 						 verbose))
 			return 0;
 
-		if (super->orom && freesize) {
-			imsm_status_t rv;
-			int count = count_volumes(super->hba, super->orom->dpa,
-					      verbose);
+		if (super->orom) {
+			int count = count_volumes(super->hba, super->orom->dpa, verbose);
+
 			if (super->orom->vphba <= count) {
 				pr_vrb("platform does not support more than %d raid volumes.\n",
 				       super->orom->vphba);
 				return 0;
 			}
-
-			rv = autolayout_imsm(super, raiddisks, size, *chunk,
-					     freesize);
-			if (rv != IMSM_STATUS_OK)
-				return 0;
 		}
+
+		if (freesize) {
+			rv = autolayout_imsm(super, raiddisks, size, *chunk, freesize);
+				if (rv != IMSM_STATUS_OK)
+					return 0;
+		}
+
 		return 1;
 	}
 	if (st->sb) {
@@ -8139,9 +8107,9 @@ static struct mdinfo *container_content_imsm(struct supertype *st, char *subarra
 	int current_vol = super->current_vol;
 
 	/* do not assemble arrays when not all attributes are supported */
-	if (imsm_check_attributes(mpb->attributes) == 0) {
+	if (imsm_check_attributes(mpb->attributes) == false) {
 		sb_errors = 1;
-		pr_err("Unsupported attributes in IMSM metadata.Arrays activation is blocked.\n");
+		pr_err("Unsupported attributes in IMSM metadata. Arrays activation is blocked.\n");
 	}
 
 	/* count spare devices, not used in maps
@@ -8275,7 +8243,7 @@ static struct mdinfo *container_content_imsm(struct supertype *st, char *subarra
 			info_d->data_offset = pba_of_lba0(map);
 			info_d->component_size = calc_component_size(map, dev);
 
-			if (map->raid_level == 5) {
+			if (map->raid_level == IMSM_T_RAID5) {
 				info_d->ppl_sector = this->ppl_sector;
 				info_d->ppl_size = this->ppl_size;
 				if (this->consistency_policy == CONSISTENCY_POLICY_PPL &&
@@ -9533,7 +9501,7 @@ static int apply_reshape_migration_update(struct imsm_update_reshape_migration *
 			}
 
 			to_state = map->map_state;
-			if ((u->new_level == 5) && (map->raid_level == 0)) {
+			if ((u->new_level == IMSM_T_RAID5) && (map->raid_level == IMSM_T_RAID0)) {
 				map->num_members++;
 				/* this should not happen */
 				if (u->new_disks[0] < 0) {
@@ -9544,11 +9512,13 @@ static int apply_reshape_migration_update(struct imsm_update_reshape_migration *
 					to_state = IMSM_T_STATE_NORMAL;
 			}
 			migrate(new_dev, super, to_state, MIGR_GEN_MIGR);
+
 			if (u->new_level > -1)
-				map->raid_level = u->new_level;
+				update_imsm_raid_level(map, u->new_level);
+
 			migr_map = get_imsm_map(new_dev, MAP_1);
-			if ((u->new_level == 5) &&
-			    (migr_map->raid_level == 0)) {
+			if ((u->new_level == IMSM_T_RAID5) &&
+			    (migr_map->raid_level == IMSM_T_RAID0)) {
 				int ord = map->num_members - 1;
 				migr_map->num_members--;
 				if (u->new_disks[0] < 0)
@@ -9584,7 +9554,7 @@ static int apply_reshape_migration_update(struct imsm_update_reshape_migration *
 
 			/* add disk
 			 */
-			if (u->new_level != 5 || migr_map->raid_level != 0 ||
+			if (u->new_level != IMSM_T_RAID5 || migr_map->raid_level != IMSM_T_RAID0 ||
 			    migr_map->raid_level == map->raid_level)
 				goto skip_disk_add;
 
@@ -9963,7 +9933,7 @@ static int apply_takeover_update(struct imsm_update_takeover *u,
 		/* update map */
 		map->num_members /= map->num_domains;
 		map->map_state = IMSM_T_STATE_NORMAL;
-		map->raid_level = 0;
+		update_imsm_raid_level(map, IMSM_T_RAID0);
 		set_num_domains(map);
 		update_num_data_stripes(map, imsm_dev_size(dev));
 		map->failed_disk_num = -1;
@@ -10007,7 +9977,7 @@ static int apply_takeover_update(struct imsm_update_takeover *u,
 		map = get_imsm_map(dev_new, MAP_0);
 
 		map->map_state = IMSM_T_STATE_DEGRADED;
-		map->raid_level = 1;
+		update_imsm_raid_level(map, IMSM_T_RAID10);
 		set_num_domains(map);
 		map->num_members = map->num_members * map->num_domains;
 		update_num_data_stripes(map, imsm_dev_size(dev));
@@ -11352,7 +11322,7 @@ check_policy:
 			return MDADM_STATUS_SUCCESS;
 
 		fd2devname(disk_fd, devname);
-		pr_vrb("Encryption status \"%s\" detected for disk %s, but \"%s\" status was detected eariler.\n",
+		pr_vrb("Encryption status \"%s\" detected for disk %s, but \"%s\" status was detected earlier.\n",
 		       encryption_state, devname, expected_policy->value);
 		pr_vrb("Disks with different encryption status cannot be used.\n");
 		return MDADM_STATUS_ERROR;
@@ -11927,24 +11897,23 @@ success:
 ****************************************************************************/
 enum imsm_reshape_type imsm_analyze_change(struct supertype *st,
 					   struct geo_params *geo,
-					   int direction)
+					   int direction, struct context *c)
 {
 	struct mdinfo info;
 	int change = -1;
 	int check_devs = 0;
 	int chunk;
-	/* number of added/removed disks in operation result */
-	int devNumChange = 0;
 	/* imsm compatible layout value for array geometry verification */
 	int imsm_layout = -1;
+	int raid_disks = geo->raid_disks;
 	imsm_status_t rv;
 
 	getinfo_super_imsm_volume(st, &info, NULL);
-	if (geo->level != info.array.level && geo->level >= 0 &&
+	if (geo->level != info.array.level && geo->level >= IMSM_T_RAID0 &&
 	    geo->level != UnSet) {
 		switch (info.array.level) {
-		case 0:
-			if (geo->level == 5) {
+		case IMSM_T_RAID0:
+			if (geo->level == IMSM_T_RAID5) {
 				change = CH_MIGRATION;
 				if (geo->layout != ALGORITHM_LEFT_ASYMMETRIC) {
 					pr_err("Error. Requested Layout not supported (left-asymmetric layout is supported only)!\n");
@@ -11953,20 +11922,28 @@ enum imsm_reshape_type imsm_analyze_change(struct supertype *st,
 				}
 				imsm_layout =  geo->layout;
 				check_devs = 1;
-				devNumChange = 1; /* parity disk added */
-			} else if (geo->level == 10) {
+				raid_disks += 1; /* parity disk added */
+			} else if (geo->level == IMSM_T_RAID10) {
+				if (geo->level == IMSM_T_RAID10 && geo->raid_disks > 2 &&
+				    !c->force) {
+					pr_err("Warning! VROC UEFI driver does not support RAID10 in requested layout.\n");
+					pr_err("Array won't be suitable as boot device.\n");
+					pr_err("Note: You can omit this check with \"--force\"\n");
+					if (ask("Do you want to continue") < 1)
+						return CH_ABORT;
+				}
 				change = CH_TAKEOVER;
 				check_devs = 1;
-				devNumChange = 2; /* two mirrors added */
+				raid_disks *= 2; /* mirrors added */
 				imsm_layout = 0x102; /* imsm supported layout */
 			}
 			break;
-		case 1:
-		case 10:
+		case IMSM_T_RAID1:
+		case IMSM_T_RAID10:
 			if (geo->level == 0) {
 				change = CH_TAKEOVER;
 				check_devs = 1;
-				devNumChange = -(geo->raid_disks/2);
+				raid_disks /= 2;
 				imsm_layout = 0; /* imsm raid0 layout */
 			}
 			break;
@@ -11982,10 +11959,10 @@ enum imsm_reshape_type imsm_analyze_change(struct supertype *st,
 	if (geo->layout != info.array.layout &&
 	    (geo->layout != UnSet && geo->layout != -1)) {
 		change = CH_MIGRATION;
-		if (info.array.layout == 0 && info.array.level == 5 &&
+		if (info.array.layout == 0 && info.array.level == IMSM_T_RAID5 &&
 		    geo->layout == 5) {
 			/* reshape 5 -> 4 */
-		} else if (info.array.layout == 5 && info.array.level == 5 &&
+		} else if (info.array.layout == 5 && info.array.level == IMSM_T_RAID5 &&
 			   geo->layout == 0) {
 			/* reshape 4 -> 5 */
 			geo->layout = 0;
@@ -12004,7 +11981,7 @@ enum imsm_reshape_type imsm_analyze_change(struct supertype *st,
 
 	if (geo->chunksize > 0 && geo->chunksize != UnSet &&
 	    geo->chunksize != info.array.chunk_size) {
-		if (info.array.level == 10) {
+		if (info.array.level == IMSM_T_RAID10) {
 			pr_err("Error. Chunk size change for RAID 10 is not supported.\n");
 			change = -1;
 			goto analyse_change_exit;
@@ -12029,14 +12006,16 @@ enum imsm_reshape_type imsm_analyze_change(struct supertype *st,
 		rv = imsm_analyze_expand(st, geo, &info, direction);
 		if (rv != IMSM_STATUS_OK)
 			goto analyse_change_exit;
+		raid_disks = geo->raid_disks;
 		change = CH_ARRAY_SIZE;
 	}
 
 	chunk = geo->chunksize / 1024;
+
 	if (!validate_geometry_imsm(st,
 				    geo->level,
 				    imsm_layout,
-				    geo->raid_disks + devNumChange,
+				    raid_disks,
 				    &chunk,
 				    geo->size, INVALID_SECTORS,
 				    0, 0, info.consistency_policy, 1))
@@ -12152,28 +12131,37 @@ exit:
 	return ret_val;
 }
 
-static int imsm_reshape_super(struct supertype *st, unsigned long long size,
-			      int level,
-			      int layout, int chunksize, int raid_disks,
-			      int delta_disks, char *backup, char *dev,
-			      int direction, int verbose)
+/**
+ * shape_to_geo() - fill geo_params from shape.
+ *
+ * @shape: array details.
+ * @geo: new geometry params.
+ * Returns: 0 on success, 1 otherwise.
+ */
+static void shape_to_geo(struct shape *shape, struct geo_params *geo)
+{
+	assert(shape);
+	assert(geo);
+
+	geo->dev_name = shape->dev;
+	geo->size = shape->size;
+	geo->level = shape->level;
+	geo->layout = shape->layout;
+	geo->chunksize = shape->chunk;
+	geo->raid_disks = shape->raiddisks;
+}
+
+static int imsm_reshape_super(struct supertype *st, struct shape *shape, struct context *c)
 {
 	int ret_val = 1;
-	struct geo_params geo;
+	struct geo_params geo = {0};
 
 	dprintf("(enter)\n");
 
-	memset(&geo, 0, sizeof(struct geo_params));
-
-	geo.dev_name = dev;
+	shape_to_geo(shape, &geo);
 	strcpy(geo.devnm, st->devnm);
-	geo.size = size;
-	geo.level = level;
-	geo.layout = layout;
-	geo.chunksize = chunksize;
-	geo.raid_disks = raid_disks;
-	if (delta_disks != UnSet)
-		geo.raid_disks += delta_disks;
+	if (shape->delta_disks != UnSet)
+		geo.raid_disks += shape->delta_disks;
 
 	dprintf("for level      : %i\n", geo.level);
 	dprintf("for raid_disks : %i\n", geo.raid_disks);
@@ -12184,7 +12172,7 @@ static int imsm_reshape_super(struct supertype *st, unsigned long long size,
 		int old_raid_disks = 0;
 
 		if (imsm_reshape_is_allowed_on_container(
-			    st, &geo, &old_raid_disks, direction)) {
+			    st, &geo, &old_raid_disks, shape->direction)) {
 			struct imsm_update_reshape *u = NULL;
 			int len;
 
@@ -12238,7 +12226,7 @@ static int imsm_reshape_super(struct supertype *st, unsigned long long size,
 			goto exit_imsm_reshape_super;
 		}
 		super->current_vol = dev->index;
-		change = imsm_analyze_change(st, &geo, direction);
+		change = imsm_analyze_change(st, &geo, shape->direction, c);
 		switch (change) {
 		case CH_TAKEOVER:
 			ret_val = imsm_takeover(st, &geo);
@@ -12281,6 +12269,7 @@ static int imsm_reshape_super(struct supertype *st, unsigned long long size,
 				free(u);
 		}
 		break;
+		case CH_ABORT:
 		default:
 			ret_val = 1;
 		}

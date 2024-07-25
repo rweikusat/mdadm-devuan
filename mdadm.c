@@ -29,6 +29,51 @@
 #include "md_p.h"
 #include <ctype.h>
 
+/**
+ * set_bitmap_value() - set bitmap value.
+ * @s: Shape.
+ * @c: Context.
+ * @val: value to set.
+ *
+ * Validate and set bitmap. Context is needed for setting nodes for clustered bitmap.
+ */
+static mdadm_status_t set_bitmap_value(struct shape *s, struct context *c, char *val)
+{
+	if (s->bitmap_file) {
+		pr_err("--bitmap cannot be set twice. Second value: \"%s\".\n", val);
+		return MDADM_STATUS_ERROR;
+	}
+
+	if (strcmp(val, "internal") == 0 || strcmp(optarg, STR_COMMON_NONE) == 0) {
+		s->bitmap_file = val;
+		return MDADM_STATUS_SUCCESS;
+	}
+
+	if (strcmp(val, "clustered") == 0) {
+		s->bitmap_file = val;
+		/* Set the default number of cluster nodes
+		 * to 4 if not already set by user
+		 */
+		if (c->nodes < 1)
+			c->nodes = 4;
+		return MDADM_STATUS_SUCCESS;
+	}
+
+	if (strchr(val, '/')) {
+		pr_info("Custom write-intent bitmap file option is deprecated.\n");
+		if (ask("Do you want to continue? (y/n)")) {
+			s->bitmap_file = val;
+			return MDADM_STATUS_SUCCESS;
+		}
+
+		return MDADM_STATUS_ERROR;
+	}
+
+	pr_err("--bitmap value must contain a '/' or be 'internal', 'clustered' or 'none'\n");
+	pr_err("Current value is \"%s\"", val);
+	return MDADM_STATUS_ERROR;
+}
+
 static int scan_assemble(struct supertype *ss,
 			 struct context *c,
 			 struct mddev_ident *ident);
@@ -1094,30 +1139,9 @@ int main(int argc, char *argv[])
 		case O(CREATE,Bitmap): /* here we create the bitmap */
 		case O(GROW,'b'):
 		case O(GROW,Bitmap):
-			if (s.bitmap_file) {
-				pr_err("bitmap cannot be set twice. Second value: %s.\n", optarg);
+			if (set_bitmap_value(&s, &c, optarg))
 				exit(2);
-			}
-			if (strcmp(optarg, "internal") == 0 ||
-			    strcmp(optarg, STR_COMMON_NONE) == 0 ||
-			    strchr(optarg, '/') != NULL) {
-				s.bitmap_file = optarg;
-				continue;
-			}
-			if (strcmp(optarg, "clustered") == 0) {
-				s.bitmap_file = optarg;
-				/* Set the default number of cluster nodes
-				 * to 4 if not already set by user
-				 */
-				if (c.nodes < 1)
-					c.nodes = 4;
-				continue;
-			}
-			/* probable typo */
-			pr_err("bitmap file must contain a '/', or be 'internal', or be 'clustered', or 'none'\n"
-				"       not '%s'\n", optarg);
-			exit(2);
-
+			continue;
 		case O(GROW,BitmapChunk):
 		case O(BUILD,BitmapChunk):
 		case O(CREATE,BitmapChunk): /* bitmap chunksize */
@@ -1636,7 +1660,7 @@ int main(int argc, char *argv[])
 				c.delay = DEFAULT_BITMAP_DELAY;
 			rv = Grow_addbitmap(ident.devname, mdfd, &c, &s);
 		} else if (grow_continue)
-			rv = Grow_continue_command(ident.devname, mdfd, c.backup_file, c.verbose);
+			rv = Grow_continue_command(ident.devname, mdfd, &c);
 		else if (s.size > 0 || s.raiddisks || s.layout_str ||
 			 s.chunk != 0 || s.level != UnSet ||
 			 s.data_offset != INVALID_SECTORS) {
