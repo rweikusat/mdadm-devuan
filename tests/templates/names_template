@@ -4,6 +4,8 @@ function names_create() {
 	local NAME=$2
 	local NEG_TEST=$3
 
+	is_raid_foreign $DEVNAME
+
 	if [[ -z "$NAME" ]]; then
 		mdadm -CR "$DEVNAME" -l0 -n 1 $dev0 --force
 	else
@@ -30,6 +32,7 @@ function names_verify() {
 	local DEVNODE_NAME="$1"
 	local WANTED_LINK="$2"
 	local WANTED_NAME="$3"
+	local EXPECTED=""
 
 	local RES="$(mdadm -D --export $DEVNODE_NAME | grep MD_DEVNAME)"
 	if [[ "$?" != "0" ]]; then
@@ -38,7 +41,12 @@ function names_verify() {
 	fi
 
 	if [[ "$WANTED_LINK" != "empty" ]]; then
-		local EXPECTED="MD_DEVNAME=$WANTED_LINK"
+		EXPECTED="MD_DEVNAME=$WANTED_LINK"
+
+		if [ ! -b /dev/md/$WANTED_LINK ]; then
+			echo "/dev/md/$WANTED_LINK doesn't exit"
+			exit 1
+		fi
 	fi
 
 	if [[ "$RES" != "$EXPECTED" ]]; then
@@ -52,7 +60,11 @@ function names_verify() {
 		exit 1
 	fi
 
-	local EXPECTED="MD_NAME=$(hostname):$WANTED_NAME"
+	if [ $is_foreign == "no" ]; then
+		EXPECTED="MD_NAME=$(hostname):$WANTED_NAME"
+	else
+		EXPECTED="MD_NAME=$WANTED_NAME"
+	fi
 	if [[ "$RES" != "$EXPECTED" ]]; then
 		echo "$RES doesn't match $EXPECTED."
 		exit 1

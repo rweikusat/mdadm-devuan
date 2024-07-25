@@ -56,21 +56,21 @@ CWFLAGS += -Wp -O3
 endif
 
 ifeq ($(origin FALLTHROUGH), undefined)
-	FALLTHROUGH := $(shell gcc -Q --help=warnings 2>&1 | grep "implicit-fallthrough" | wc -l)
+	FALLTHROUGH := $(shell $(CC) -Q --help=warnings 2>&1 | grep "implicit-fallthrough" | wc -l)
 	ifneq "$(FALLTHROUGH)"  "0"
 	CWFLAGS += -Wimplicit-fallthrough=0
 	endif
 endif
 
 ifeq ($(origin FORMATOVERFLOW), undefined)
-	FORMATOVERFLOW := $(shell gcc -Q --help=warnings 2>&1 | grep "format-overflow" | wc -l)
+	FORMATOVERFLOW := $(shell $(CC) -Q --help=warnings 2>&1 | grep "format-overflow" | wc -l)
 	ifneq "$(FORMATOVERFLOW)"  "0"
 	CWFLAGS += -Wformat-overflow
 	endif
 endif
 
 ifeq ($(origin STRINGOPOVERFLOW), undefined)
-	STRINGOPOVERFLOW := $(shell gcc -Q --help=warnings 2>&1 | grep "stringop-overflow" | wc -l)
+	STRINGOPOVERFLOW := $(shell $(CC) -Q --help=warnings 2>&1 | grep "stringop-overflow" | wc -l)
 	ifneq "$(STRINGOPOVERFLOW)"  "0"
 	CWFLAGS += -Wstringop-overflow
 	endif
@@ -132,12 +132,12 @@ CFLAGS += -DUSE_PTHREADS
 MON_LDFLAGS += -pthread
 endif
 
-LDFLAGS = -Wl,-z,now,-z,noexecstack
+LDFLAGS ?= -pie -Wl,-z,now,-z,noexecstack
 
 # If you want a static binary, you might uncomment these
 # LDFLAGS += -static
 # STRIP = -s
-LDLIBS = -ldl -pie
+LDLIBS = -ldl
 
 # To explicitly disable libudev, set -DNO_LIBUDEV in CXFLAGS
 ifeq (, $(findstring -DNO_LIBUDEV,  $(CXFLAGS)))
@@ -157,7 +157,7 @@ ifndef UDEVDIR
  UDEVDIR = /lib/udev
 endif
 
-ifeq (,$(findstring s,$(MAKEFLAGS)))
+ifeq (,$(findstring s,$(firstword -$(MAKEFLAGS))))
 	ECHO=echo
 else
 	ECHO=:

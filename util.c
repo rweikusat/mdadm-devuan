@@ -633,9 +633,9 @@ int check_ext2(int fd, char *name)
 	bsize = sb[24]|(sb[25]|(sb[26]|sb[27]<<8)<<8)<<8;
 	size = sb[4]|(sb[5]|(sb[6]|sb[7]<<8)<<8)<<8;
 	size <<= bsize;
-	pr_err("%s appears to contain an ext2fs file system\n",
+	pr_info("%s appears to contain an ext2fs file system\n",
 		name);
-	cont_err("size=%lluK  mtime=%s", size, ctime(&mtime));
+	pr_info("size=%lluK  mtime=%s", size, ctime(&mtime));
 	return 1;
 }
 
@@ -725,23 +725,33 @@ int stat_is_blkdev(char *devname, dev_t *rdev)
 	return 1;
 }
 
+/**
+ * ask() - prompt user for "yes/no" dialog.
+ * @mesg: message to be printed, without '?' sign.
+ * Returns: 1 if 'Y/y', 0 otherwise.
+ *
+ * The default value is 'N/n', thus the caps on "N" on prompt.
+ */
 int ask(char *mesg)
 {
-	char *add = "";
-	int i;
-	for (i = 0; i < 5; i++) {
-		char buf[100];
-		fprintf(stderr, "%s%s", mesg, add);
-		fflush(stderr);
-		if (fgets(buf, 100, stdin)==NULL)
-			return 0;
-		if (buf[0]=='y' || buf[0]=='Y')
-			return 1;
-		if (buf[0]=='n' || buf[0]=='N')
-			return 0;
-		add = "(y/n) ";
+	char buf[3] = {0};
+
+	fprintf(stderr, "%s [y/N]? ", mesg);
+	fflush(stderr);
+	if (fgets(buf, 3, stdin) == NULL)
+		return 0;
+	if (strlen(buf) == 1) {
+		pr_err("assuming no.\n");
+		return 0;
 	}
-	pr_err("assuming 'no'\n");
+	if (buf[1] != '\n')
+		goto bad_option;
+	if (toupper(buf[0]) == 'Y')
+		return 1;
+	if (toupper(buf[0]) == 'N')
+		return 0;
+bad_option:
+	pr_err("bad option.\n");
 	return 0;
 }
 
@@ -1868,6 +1878,7 @@ int set_array_info(int mdfd, struct supertype *st, struct mdinfo *info)
 
 	if (st->ss->external)
 		return sysfs_set_array(info);
+
 	memset(&inf, 0, sizeof(inf));
 	inf.major_version = info->array.major_version;
 	inf.minor_version = info->array.minor_version;
@@ -1891,7 +1902,7 @@ unsigned long long min_recovery_start(struct mdinfo *array)
 	return recovery_start;
 }
 
-int mdmon_pid(char *devnm)
+int mdmon_pid(const char *devnm)
 {
 	char path[100];
 	char pid[10];
@@ -1911,7 +1922,7 @@ int mdmon_pid(char *devnm)
 	return atoi(pid);
 }
 
-int mdmon_running(char *devnm)
+int mdmon_running(const char *devnm)
 {
 	int pid = mdmon_pid(devnm);
 	if (pid <= 0)
@@ -1919,6 +1930,80 @@ int mdmon_running(char *devnm)
 	if (kill(pid, 0) == 0)
 		return 1;
 	return 0;
+}
+
+/*
+ * wait_for_mdmon_control_socket() - Waits for mdmon control socket
+ * to be created within specified time.
+ * @container_devnm: Device for which mdmon control socket should start.
+ *
+ * In foreground mode, when mdadm is trying to connect to control
+ * socket it is possible that the mdmon has not created it yet.
+ * Give some time to mdmon to create socket. Timeout set to 2 sec.
+ *
+ * Return: MDADM_STATUS_SUCCESS if connect succeed, otherwise return
+ * error code.
+ */
+mdadm_status_t wait_for_mdmon_control_socket(const char *container_devnm)
+{
+	enum mdadm_status status = MDADM_STATUS_SUCCESS;
+	int sfd, rv, retry_count = 0;
+	struct sockaddr_un addr;
+	char path[PATH_MAX];
+
+	snprintf(path, PATH_MAX, "%s/%s.sock", MDMON_DIR, container_devnm);
+	sfd = socket(PF_LOCAL, SOCK_STREAM, 0);
+	if (!is_fd_valid(sfd))
+		return MDADM_STATUS_ERROR;
+
+	addr.sun_family = PF_LOCAL;
+        strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+        addr.sun_path[sizeof(addr.sun_path) - 1] = '\0';
+
+	for (retry_count = 0; retry_count < 10; retry_count++) {
+		rv = connect(sfd, (struct sockaddr*)&addr, sizeof(addr));
+		if (rv < 0) {
+			sleep_for(0, MSEC_TO_NSEC(200), true);
+			continue;
+		}
+		break;
+	}
+
+	if (rv < 0) {
+		pr_err("Failed to connect to control socket.\n");
+		status = MDADM_STATUS_ERROR;
+	}
+	close(sfd);
+	return status;
+}
+
+/*
+ * wait_for_mdmon() - Waits for mdmon within specified time.
+ * @devnm: Device for which mdmon should start.
+ *
+ * Function waits for mdmon to start. It may need few seconds
+ * to start, we set timeout to 5, it should be sufficient.
+ * Do not wait if mdmon has been started.
+ *
+ * Return: MDADM_STATUS_SUCCESS if mdmon is running, error code otherwise.
+ */
+mdadm_status_t wait_for_mdmon(const char *devnm)
+{
+	const time_t mdmon_timeout = 5;
+	time_t start_time = time(0);
+
+	if (mdmon_running(devnm))
+		return MDADM_STATUS_SUCCESS;
+
+	pr_info("Waiting for mdmon to start\n");
+	while (time(0) - start_time < mdmon_timeout) {
+		sleep_for(0, MSEC_TO_NSEC(200), true);
+		if (mdmon_running(devnm))
+			return MDADM_STATUS_SUCCESS;
+	};
+
+	pr_err("Timeout waiting for mdmon\n");
+	return MDADM_STATUS_ERROR;
 }
 
 int start_mdmon(char *devnm)

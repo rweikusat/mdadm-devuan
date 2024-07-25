@@ -32,6 +32,64 @@
 
 #define NVME_SUBSYS_PATH "/sys/devices/virtual/nvme-subsystem/"
 
+static bool imsm_orom_has_raid0(const struct imsm_orom *orom)
+{
+	return imsm_rlc_has_bit(orom, IMSM_OROM_RLC_RAID0);
+}
+
+static bool imsm_orom_has_raid1(const struct imsm_orom *orom)
+{
+	return imsm_rlc_has_bit(orom, IMSM_OROM_RLC_RAID1);
+}
+
+static bool imsm_orom_has_raid10(const struct imsm_orom *orom)
+{
+	return imsm_rlc_has_bit(orom, IMSM_OROM_RLC_RAID10);
+}
+
+static bool imsm_orom_has_raid5(const struct imsm_orom *orom)
+{
+	return imsm_rlc_has_bit(orom, IMSM_OROM_RLC_RAID5);
+}
+
+/* IMSM platforms do not define how many disks are allowed for each level,
+ * but there are some global limitations we need to follow.
+ */
+static bool imsm_orom_support_raid_disks_count_raid0(const int raid_disks)
+{
+	return true;
+}
+
+static bool imsm_orom_support_raid_disks_count_raid1(const int raid_disks)
+{
+	if (raid_disks == 2)
+		return true;
+	return false;
+}
+
+static bool imsm_orom_support_raid_disks_count_raid5(const int raid_disks)
+{
+	if (raid_disks > 2)
+		return true;
+	return false;
+}
+
+static bool imsm_orom_support_raid_disks_count_raid10(const int raid_disks)
+{
+	/* raid_disks count must be higher than 4 and even */
+	if (raid_disks >= 4 && (raid_disks & 1) == 0)
+		return true;
+	return false;
+}
+
+struct imsm_level_ops imsm_level_ops[] = {
+		{0, imsm_orom_has_raid0, imsm_orom_support_raid_disks_count_raid0, "raid0"},
+		{1, imsm_orom_has_raid1, imsm_orom_support_raid_disks_count_raid1, "raid1"},
+		{5, imsm_orom_has_raid5, imsm_orom_support_raid_disks_count_raid5, "raid5"},
+		{10, imsm_orom_has_raid10, imsm_orom_support_raid_disks_count_raid10, "raid10"},
+		{-1, NULL, NULL, NULL}
+};
+
 static int devpath_to_ll(const char *dev_path, const char *entry,
 			 unsigned long long *val);
 
@@ -849,14 +907,14 @@ char *get_nvme_multipath_dev_hw_path(const char *dev_path)
 		return NULL;
 
 	for (ent = readdir(dir); ent; ent = readdir(dir)) {
-		char buf[strlen(dev_path) + strlen(ent->d_name) + 1];
+		char buf[PATH_MAX];
 
 		/* Check if dir is a controller, ignore namespaces*/
 		if (!(strncmp(ent->d_name, "nvme", 4) == 0) ||
 		    (strrchr(ent->d_name, 'n') != &ent->d_name[0]))
 			continue;
 
-		sprintf(buf, "%s/%s", dev_path, ent->d_name);
+		snprintf(buf, PATH_MAX, "%s/%s", dev_path, ent->d_name);
 		rp = realpath(buf, NULL);
 		break;
 	}
