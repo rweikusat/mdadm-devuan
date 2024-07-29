@@ -5,6 +5,8 @@ Maintainer: Daniel Baumann <daniel.baumann@progress-linux.org>
 Build-Depends:
  debhelper-compat (= 13),
  libudev-dev,
+ pkgconf,
+ systemd-dev,
 Rules-Requires-Root: no
 Standards-Version: 4.7.0
 Homepage: https://raid.wiki.kernel.org
