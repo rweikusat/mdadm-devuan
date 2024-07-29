@@ -1,11 +1,4 @@
 #!/usr/bin/make -f
-# Copyright © 2001-2005 Mario Jou/3en <joussen@debian.org>
-# Copyright © 2005-2008 Martin F. Krafft <madduck@debian.org>
-# Copyright © 2021 Felix Lechner <felix.lechner@lease-up.com>
-# Distributable under the terms of the GNU GPL version 2.
-#
-
-#export DH_VERBOSE=1
 
 include /usr/share/dpkg/pkg-info.mk
 include /usr/share/dpkg/vendor.mk
