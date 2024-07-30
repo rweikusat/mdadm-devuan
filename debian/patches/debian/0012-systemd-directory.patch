@@ -1,0 +1,19 @@
+Author: Chris Hofstaedtler <zeha@debian.org>
+Description: Patch Makefile to use pkg-config systemd to discover systemd unit dir.
+
+diff -Naurp mdadm.orig/Makefile mdadm/Makefile
+--- mdadm.orig/Makefile
++++ mdadm/Makefile
+@@ -106,7 +106,11 @@ MAP_PATH = $(MAP_DIR)/$(MAP_FILE)
+ MDMON_DIR = $(RUN_DIR)
+ # place for autoreplace cookies
+ FAILED_SLOTS_DIR = $(RUN_DIR)/failed-slots
+-SYSTEMD_DIR=/lib/systemd/system
++SYSTEMD_DIR := $(shell $(PKG_CONFIG) --variable=systemdsystemunitdir systemd 2>/dev/null)
++ifndef SYSTEMD_DIR
++ SYSTEMD_DIR=/lib/systemd/system
++endif
++
+ LIB_DIR=/usr/libexec/mdadm
+ 
+ COROSYNC:=$(shell [ -d /usr/include/corosync ] || echo -DNO_COROSYNC)

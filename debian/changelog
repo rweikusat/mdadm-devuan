@@ -1,3 +1,14 @@
+mdadm (4.3+20240723-2) sid; urgency=medium
+
+  * Uploading to sid.
+  * Shortening dh_install override in rules.
+  * Decluttering comments in rules file.
+  * Adding slightly adjusted patch from Chris Hofstaedtler
+    <zeha@debian.org> to install into usrmerged layout (Closes: #1073726).
+  * Wrap-and-sorting debian files.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Mon, 29 Jul 2024 18:15:04 +0200
+
 mdadm (4.3+20240723-1devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.3+20240723-1.

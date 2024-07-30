@@ -1,2 +1,2 @@
 # root device could be and array, so keep on in single-user mode
-init.d-script-possible-missing-stop 1 [etc/init.d/mdadm-waitidle]
+init.d-script-possible-missing-stop etc/init.d/mdadm-waitidle 1

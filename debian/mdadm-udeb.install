@@ -1,2 +1,2 @@
-lib/udev/rules.d/63-md-raid-arrays.rules
-sbin/
+usr/lib/udev/rules.d/63-md-raid-arrays.rules
+usr/sbin/
