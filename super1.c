@@ -24,6 +24,8 @@
 
 #include <stddef.h>
 #include "mdadm.h"
+#include "xmalloc.h"
+
 /*
  * The version-1 superblock :
  * All numeric fields are little-endian.
@@ -260,7 +262,10 @@ static int aread(struct align_fd *afd, void *buf, int len)
 	n = read(afd->fd, b, iosize);
 	if (n <= 0)
 		return n;
-	lseek(afd->fd, len - n, 1);
+	if (lseek(afd->fd, len - n, 1) < 0) {
+		pr_err("lseek fails\n");
+		return -1;
+	}
 	if (n > len)
 		n = len;
 	memcpy(buf, b, n);
@@ -294,14 +299,20 @@ static int awrite(struct align_fd *afd, void *buf, int len)
 		n = read(afd->fd, b, iosize);
 		if (n <= 0)
 			return n;
-		lseek(afd->fd, -n, 1);
+		if (lseek(afd->fd, -n, 1) < 0) {
+			pr_err("lseek fails\n");
+			return -1;
+		}
 	}
 
 	memcpy(b, buf, len);
 	n = write(afd->fd, b, iosize);
 	if (n <= 0)
 		return n;
-	lseek(afd->fd, len - n, 1);
+	if (lseek(afd->fd, len - n, 1) < 0) {
+		pr_err("lseek fails\n");
+		return -1;
+	}
 	return len;
 }
 
@@ -331,6 +342,9 @@ static void examine_super1(struct supertype *st, char *homehost)
 	unsigned long long sb_offset;
 	struct mdinfo info;
 	int inconsistent = 0;
+	unsigned int expected_csum = 0;
+
+	expected_csum = calc_sb_1_csum(sb);
 
 	printf("          Magic : %08x\n", __le32_to_cpu(sb->magic));
 	printf("        Version : 1");
@@ -498,13 +512,13 @@ static void examine_super1(struct supertype *st, char *homehost)
 		printf("\n");
 	}
 
-	if (calc_sb_1_csum(sb) == sb->sb_csum)
+	if (expected_csum == sb->sb_csum)
 		printf("       Checksum : %x - correct\n",
 		       __le32_to_cpu(sb->sb_csum));
 	else
 		printf("       Checksum : %x - expected %x\n",
 		       __le32_to_cpu(sb->sb_csum),
-		       __le32_to_cpu(calc_sb_1_csum(sb)));
+		       __le32_to_cpu(expected_csum));
 	printf("         Events : %llu\n",
 	       (unsigned long long)__le64_to_cpu(sb->events));
 	printf("\n");
@@ -911,10 +925,12 @@ static int examine_badblocks_super1(struct supertype *st, int fd, char *devname)
 	offset <<= 9;
 	if (lseek64(fd, offset, 0) < 0) {
 		pr_err("Cannot seek to bad-blocks list\n");
+		free(bbl);
 		return 1;
 	}
 	if (read(fd, bbl, size) != size) {
 		pr_err("Cannot read bad-blocks list\n");
+		free(bbl);
 		return 1;
 	}
 	/* 64bits per entry. 10 bits is block-count, 54 bits is block
@@ -935,6 +951,7 @@ static int examine_badblocks_super1(struct supertype *st, int fd, char *devname)
 
 		printf("%20llu for %d sectors\n", sector, count);
 	}
+	free(bbl);
 	return 0;
 }
 
@@ -1457,8 +1474,6 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 						__le32_to_cpu(sb->chunksize));
 			if (space > optimal_space)
 				space = optimal_space;
-			if (space > UINT16_MAX)
-				space = UINT16_MAX;
 		}
 
 		sb->ppl.offset = __cpu_to_le16(offset);
@@ -2667,7 +2682,10 @@ static int locate_bitmap1(struct supertype *st, int fd, int node_num)
 	}
 	if (mustfree)
 		free(sb);
-	lseek64(fd, offset<<9, 0);
+	if (lseek64(fd, offset<<9, 0) < 0) {
+		pr_err("lseek fails\n");
+		ret = -1;
+	}
 	return ret;
 }
 

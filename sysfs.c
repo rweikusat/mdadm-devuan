@@ -24,9 +24,11 @@
  */
 
 #include	"mdadm.h"
+#include	"dlink.h"
+#include	"xmalloc.h"
+
 #include	<dirent.h>
 #include	<ctype.h>
-#include	"dlink.h"
 
 #define MAX_SYSFS_PATH_LEN	120
 
@@ -73,6 +75,47 @@ void sysfs_free(struct mdinfo *sra)
 		sra = sra2;
 	}
 }
+/**
+ * write_attr() - write value to fd, don't check errno.
+ * @attr: value to write.
+ * @fd: file descriptor write to.
+ *
+ * Size to write is calculated by strlen().
+ */
+mdadm_status_t write_attr(const char *value, const int fd)
+{
+	return sysfs_write_descriptor(fd, value, strlen(value), NULL);
+}
+
+/**
+ * sysfs_write_descriptor()- wrapper for write(), projected to be used with sysfs.
+ * @fd: file descriptor.
+ * @value: value to set.
+ * @len: length of the value.
+ * @errno_p: On write() failure, buffer to copy errno value, might be NULL.
+ *
+ * Errors are differentiated, because (at least theoretically) kernel may not process whole string
+ * and it may or may not be a problem (it depends on implementation in kernel). Decision belongs to
+ * caller then.
+ * Generally, it should be safe to check if @errno_p changed to determine if error occurred.
+ */
+mdadm_status_t sysfs_write_descriptor(const int fd, const char *value, const ssize_t len,
+				      int *errno_p)
+{
+	ssize_t ret;
+
+	ret = write(fd, value, len);
+	if (ret == -1) {
+		if (errno_p)
+			*errno_p = errno;
+		return MDADM_STATUS_ERROR;
+	}
+
+	if (ret != len)
+		return MDADM_STATUS_UNDEF;
+
+	return MDADM_STATUS_SUCCESS;
+}
 
 /**
  * sysfs_get_container_devnm() - extract container device name.
@@ -95,6 +138,24 @@ void sysfs_get_container_devnm(struct mdinfo *mdi, char *buf)
 	p = strchr(buf, '/');
 	if (p)
 		*p = 0;
+}
+
+/**
+ * sysfs_open_memb_attr() - helper to get sysfs attr descriptor for member device.
+ * @array_devnm: array kernel device name.
+ * @memb_devnm: member device kernel device name.
+ * @attr: requested sysfs attribute.
+ * @oflag: open() flags.
+ *
+ * To refer member device directory, we need to append "dev-" before the member device name.
+ */
+int sysfs_open_memb_attr(char *array_devnm, char *memb_devnm, char *attr, int oflag)
+{
+	char path[PATH_MAX];
+
+	snprintf(path, PATH_MAX, "/sys/block/%s/md/dev-%s/%s", array_devnm, memb_devnm, attr);
+
+	return open(path, oflag);
 }
 
 int sysfs_open(char *devnm, char *devname, char *attr)
@@ -139,13 +200,14 @@ int sysfs_init(struct mdinfo *mdi, int fd, char *devnm)
 		goto out;
 	if (!S_ISDIR(stb.st_mode))
 		goto out;
-	strcpy(mdi->sys_name, devnm);
+	strncpy(mdi->sys_name, devnm, sizeof(mdi->sys_name) - 1);
 
 	retval = 0;
 out:
 	return retval;
 }
 
+/* If fd >= 0, get the array it is open on, else use devnm. */
 struct mdinfo *sysfs_read(int fd, char *devnm, unsigned long options)
 {
 	char fname[PATH_MAX];
@@ -179,6 +241,7 @@ struct mdinfo *sysfs_read(int fd, char *devnm, unsigned long options)
 			sra->array.major_version = -1;
 			sra->array.minor_version = -2;
 			strcpy(sra->text_version, buf+9);
+			sra->text_version[sizeof(sra->text_version) - 1] = '\0';
 		} else {
 			sscanf(buf, "%d.%d",
 			       &sra->array.major_version,
@@ -340,6 +403,7 @@ struct mdinfo *sysfs_read(int fd, char *devnm, unsigned long options)
 
 		}
 		strcpy(dev->sys_name, de->d_name);
+		dev->sys_name[sizeof(dev->sys_name) - 1] = '\0';
 		dev->disk.raid_disk = strtoul(buf, &ep, 10);
 		if (*ep) dev->disk.raid_disk = -1;
 
@@ -484,7 +548,6 @@ int sysfs_set_str(struct mdinfo *sra, struct mdinfo *dev,
 		  char *name, char *val)
 {
 	char fname[MAX_SYSFS_PATH_LEN];
-	unsigned int n;
 	int fd;
 
 	snprintf(fname, MAX_SYSFS_PATH_LEN, "/sys/block/%s/md/%s/%s",
@@ -492,13 +555,14 @@ int sysfs_set_str(struct mdinfo *sra, struct mdinfo *dev,
 	fd = open(fname, O_WRONLY);
 	if (fd < 0)
 		return -1;
-	n = write(fd, val, strlen(val));
-	close(fd);
-	if (n != strlen(val)) {
-		dprintf("failed to write '%s' to '%s' (%s)\n",
-			val, fname, strerror(errno));
+
+	if (write_attr(val, fd)) {
+		pr_err("failed to write '%s' to '%s' (%s)\n", val, fname, strerror(errno));
+		close(fd);
 		return -1;
 	}
+
+	close(fd);
 	return 0;
 }
 
@@ -521,7 +585,6 @@ int sysfs_set_num_signed(struct mdinfo *sra, struct mdinfo *dev,
 int sysfs_uevent(struct mdinfo *sra, char *event)
 {
 	char fname[MAX_SYSFS_PATH_LEN];
-	int n;
 	int fd;
 
 	snprintf(fname, MAX_SYSFS_PATH_LEN, "/sys/block/%s/uevent",
@@ -529,13 +592,14 @@ int sysfs_uevent(struct mdinfo *sra, char *event)
 	fd = open(fname, O_WRONLY);
 	if (fd < 0)
 		return -1;
-	n = write(fd, event, strlen(event));
-	close(fd);
-	if (n != (int)strlen(event)) {
-		dprintf("failed to write '%s' to '%s' (%s)\n",
-			event, fname, strerror(errno));
+
+	if (write_attr(event, fd)) {
+		pr_err("failed to write '%s' to '%s' (%s)\n", event, fname, strerror(errno));
+		close(fd);
 		return -1;
 	}
+
+	close(fd);
 	return 0;
 }
 
@@ -772,8 +836,8 @@ int sysfs_add_disk(struct mdinfo *sra, struct mdinfo *sd, int resume)
 
 	memset(nm, 0, sizeof(nm));
 	dname = devid2kname(makedev(sd->disk.major, sd->disk.minor));
-	strcpy(sd->sys_name, "dev-");
-	strcpy(sd->sys_name+4, dname);
+
+	snprintf(sd->sys_name, sizeof(sd->sys_name), "dev-%s", dname);
 
 	/* test write to see if 'recovery_start' is available */
 	if (resume && sd->recovery_start < MaxSector &&
