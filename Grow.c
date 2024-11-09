@@ -23,6 +23,8 @@
  */
 #include	"mdadm.h"
 #include	"dlink.h"
+#include	"xmalloc.h"
+
 #include	<sys/mman.h>
 #include	<stddef.h>
 #include	<stdint.h>
@@ -530,8 +532,10 @@ int Grow_addbitmap(char *devname, int fd, struct context *c, struct shape *s)
 				pr_err("Cannot add bitmap while array is resyncing or reshaping etc.\n");
 			pr_err("Cannot set bitmap file for %s: %s\n",
 				devname, strerror(err));
+			close_fd(&bitmap_fd);
 			return 1;
 		}
+		close_fd(&bitmap_fd);
 	}
 
 	return 0;
@@ -1692,7 +1696,7 @@ char *analyse_change(char *devname, struct mdinfo *info, struct reshape *re)
 					/* Current RAID6 layout has a RAID5
 					 * equivalent - good
 					 */
-					strcat(strcpy(layout, ls), "-6");
+					snprintf(layout, 40, "%s-6", ls);
 					l = map_name(r6layout, layout);
 					if (l == UnSet)
 						return "Cannot find RAID6 layout to convert to";
@@ -2032,7 +2036,8 @@ int Grow_reshape(char *devname, int fd,
 		sysfs_free(sra);
 		return 1;
 	} else if (frozen < 0) {
-		pr_err("%s is performing resync/recovery and cannot be reshaped\n", devname);
+		pr_err("%s is performing resync/recovery and cannot be %s\n", devname,
+		       (s->level != UnSet && s->level != array.level) ? "taken over" : "reshaped");
 		sysfs_free(sra);
 		return 1;
 	}
@@ -2147,19 +2152,14 @@ int Grow_reshape(char *devname, int fd,
 		if (s->size == MAX_SIZE)
 			s->size = 0;
 		array.size = s->size;
-		if (s->size & ~INT32_MAX) {
-			/* got truncated to 32bit, write to
-			 * component_size instead
-			 */
-			rv = sysfs_set_num(sra, NULL, "component_size", s->size);
-		} else {
-			rv = md_set_array_info(fd, &array);
+		rv = sysfs_set_num(sra, NULL, "component_size", s->size);
 
-			/* manage array size when it is managed externally
-			 */
-			if ((rv == 0) && st->ss->external)
-				rv = set_array_size(st, sra, sra->text_version);
-		}
+		/*
+		 * For native metadata, md/array_size is updated by kernel,
+		 * for external management update it here.
+		 */
+		if (st->ss->external && rv == MDADM_STATUS_SUCCESS)
+			rv = set_array_size(st, sra, sra->text_version);
 
 		if (raid0_takeover) {
 			/* do not recync non-existing parity,
@@ -2944,15 +2944,24 @@ static int impose_reshape(struct mdinfo *sra,
 		 * persists from some earlier problem.
 		 */
 		int err = 0;
+
 		if (sysfs_set_num(sra, NULL, "chunk_size", info->new_chunk) < 0)
 			err = errno;
+
 		if (!err && sysfs_set_num(sra, NULL, "layout",
 					  reshape->after.layout) < 0)
 			err = errno;
+
+		/* new_level is introduced in kernel 6.12 */
+		if (!err && sysfs_attribute_available(sra, NULL, "new_level") &&
+				sysfs_set_num(sra, NULL, "new_level", info->new_level) < 0)
+			err = errno;
+
 		if (!err && subarray_set_num(container, sra, "raid_disks",
 					     reshape->after.data_disks +
 					     reshape->parity) < 0)
 			err = errno;
+
 		if (err) {
 			pr_err("Cannot set device shape for %s\n", devname);
 
@@ -3028,6 +3037,13 @@ static int impose_level(int fd, int level, char *devname, int verbose)
 			      makedev(disk.major, disk.minor));
 			hot_remove_disk(fd, makedev(disk.major, disk.minor), 1);
 		}
+		/*
+		 * hot_remove_disk lets kernel set MD_RECOVERY_RUNNING
+		 * and it can't set level. It needs to wait sometime
+		 * to let md thread to clear the flag.
+		 */
+		pr_info("wait 5 seconds to give kernel space to finish job\n");
+		sleep_for(5, 0, true);
 	}
 	c = map_num(pers, level);
 	if (c) {
@@ -3083,6 +3099,7 @@ static int reshape_array(char *container, int fd, char *devname,
 	int done;
 	struct mdinfo *sra = NULL;
 	char buf[SYSFS_MAX_BUF_SIZE];
+	bool located_backup = false;
 
 	/* when reshaping a RAID0, the component_size might be zero.
 	 * So try to fix that up.
@@ -3165,8 +3182,10 @@ static int reshape_array(char *container, int fd, char *devname,
 			goto release;
 		}
 
-		if (!backup_file)
+		if (!backup_file) {
 			backup_file = locate_backup(sra->sys_name);
+			located_backup = true;
+		}
 
 		goto started;
 	}
@@ -3261,7 +3280,12 @@ static int reshape_array(char *container, int fd, char *devname,
 					/* This is a spare that wants to
 					 * be part of the array.
 					 */
-					add_disk(fd, st, info2, d);
+					if (add_disk(fd, st, info2, d) < 0) {
+						pr_err("Can not add disk %s\n",
+								d->sys_name);
+						free(info2);
+						goto release;
+					}
 				}
 			}
 			sysfs_free(info2);
@@ -3607,15 +3631,13 @@ started:
 			mdstat_wait(30 - (delayed-1) * 25);
 	} while (delayed);
 	mdstat_close();
-	if (check_env("MDADM_GROW_VERIFY"))
-		fd = open(devname, O_RDONLY | O_DIRECT);
-	else
-		fd = -1;
 	mlockall(MCL_FUTURE);
 
 	if (signal_s(SIGTERM, catch_term) == SIG_ERR)
 		goto release;
 
+	if (check_env("MDADM_GROW_VERIFY"))
+		fd = open(devname, O_RDONLY | O_DIRECT);
 	if (st->ss->external) {
 		/* metadata handler takes it from here */
 		done = st->ss->manage_reshape(
@@ -3627,6 +3649,7 @@ started:
 			fd, sra, &reshape, st, blocks, fdlist, offsets,
 			d - odisks, fdlist + odisks, offsets + odisks);
 
+	close_fd(&fd);
 	free(fdlist);
 	free(offsets);
 
@@ -3681,9 +3704,12 @@ started:
 		set_array_size(st, info, info->text_version);
 
 	if (info->new_level != reshape.level) {
-		if (fd < 0)
-			fd = open(devname, O_RDONLY);
-		impose_level(fd, info->new_level, devname, verbose);
+		fd = open_dev(sra->sys_name);
+		if (fd < 0) {
+			pr_err("Can't open %s\n", sra->sys_name);
+			goto out;
+		}
+		impose_level(fd, info->new_level, sra->sys_name, verbose);
 		close(fd);
 		if (info->new_level == 0)
 			st->update_tail = NULL;
@@ -3696,6 +3722,8 @@ out:
 	exit(0);
 
 release:
+	if (located_backup)
+		free(backup_file);
 	free(fdlist);
 	free(offsets);
 	if (orig_level != UnSet && sra) {
@@ -3834,6 +3862,7 @@ int reshape_container(char *container, char *devname,
 			pr_err("Unable to initialize sysfs for %s\n",
 			       mdstat->devnm);
 			rv = 1;
+			close_fd(&fd);
 			break;
 		}
 
@@ -4132,8 +4161,8 @@ int progress_reshape(struct mdinfo *info, struct reshape *reshape,
 		 * waiting forever on a dead array
 		 */
 		char action[SYSFS_MAX_BUF_SIZE];
-		if (sysfs_get_str(info, NULL, "sync_action", action, sizeof(action)) <= 0 ||
-		    strncmp(action, "reshape", 7) != 0)
+
+		if (sysfs_get_str(info, NULL, "sync_action", action, sizeof(action)) <= 0)
 			break;
 		/* Some kernels reset 'sync_completed' to zero
 		 * before setting 'sync_action' to 'idle'.
@@ -4141,12 +4170,18 @@ int progress_reshape(struct mdinfo *info, struct reshape *reshape,
 		 */
 		if (completed == 0 && advancing &&
 		    strncmp(action, "idle", 4) == 0 &&
-		    info->reshape_progress > 0)
+		    info->reshape_progress > 0) {
+			info->reshape_progress = need_backup;
 			break;
+		}
 		if (completed == 0 && !advancing &&
 		    strncmp(action, "idle", 4) == 0 &&
 		    info->reshape_progress <
-		    (info->component_size * reshape->after.data_disks))
+		    (info->component_size * reshape->after.data_disks)) {
+			info->reshape_progress = need_backup;
+			break;
+		}
+		if (strncmp(action, "reshape", 7) != 0)
 			break;
 		sysfs_wait(fd, NULL);
 		if (sysfs_fd_get_ll(fd, &completed) < 0)
@@ -4413,7 +4448,10 @@ static void validate(int afd, int bfd, unsigned long long offset)
 	 */
 	if (afd < 0)
 		return;
-	lseek64(bfd, offset - 4096, 0);
+	if (lseek64(bfd, offset - 4096, 0) < 0) {
+		pr_err("lseek64 fails %d:%s\n", errno, strerror(errno));
+		return;
+	}
 	if (read(bfd, &bsb2, 512) != 512)
 		fail("cannot read bsb");
 	if (bsb2.sb_csum != bsb_csum((char*)&bsb2,
@@ -4444,12 +4482,19 @@ static void validate(int afd, int bfd, unsigned long long offset)
 			}
 		}
 
-		lseek64(bfd, offset, 0);
+		if (lseek64(bfd, offset, 0) < 0) {
+			pr_err("lseek64 fails %d:%s\n", errno, strerror(errno));
+			goto out;
+		}
 		if ((unsigned long long)read(bfd, bbuf, len) != len) {
 			//printf("len %llu\n", len);
 			fail("read first backup failed");
 		}
-		lseek64(afd, __le64_to_cpu(bsb2.arraystart)*512, 0);
+
+		if (lseek64(afd, __le64_to_cpu(bsb2.arraystart)*512, 0) < 0) {
+			pr_err("lseek64 fails %d:%s\n", errno, strerror(errno));
+			goto out;
+		}
 		if ((unsigned long long)read(afd, abuf, len) != len)
 			fail("read first from array failed");
 		if (memcmp(bbuf, abuf, len) != 0)
@@ -4466,15 +4511,25 @@ static void validate(int afd, int bfd, unsigned long long offset)
 			bbuf = xmalloc(abuflen);
 		}
 
-		lseek64(bfd, offset+__le64_to_cpu(bsb2.devstart2)*512, 0);
+		if (lseek64(bfd, offset+__le64_to_cpu(bsb2.devstart2)*512, 0) < 0) {
+			pr_err("lseek64 fails %d:%s\n", errno, strerror(errno));
+			goto out;
+		}
 		if ((unsigned long long)read(bfd, bbuf, len) != len)
 			fail("read second backup failed");
-		lseek64(afd, __le64_to_cpu(bsb2.arraystart2)*512, 0);
+		if (lseek64(afd, __le64_to_cpu(bsb2.arraystart2)*512, 0) < 0) {
+			pr_err("lseek64 fails %d:%s\n", errno, strerror(errno));
+			goto out;
+		}
 		if ((unsigned long long)read(afd, abuf, len) != len)
 			fail("read second from array failed");
 		if (memcmp(bbuf, abuf, len) != 0)
 			fail("data2 compare failed");
 	}
+out:
+	free(abuf);
+	free(bbuf);
+	return;
 }
 
 int child_monitor(int afd, struct mdinfo *sra, struct reshape *reshape,
@@ -4692,6 +4747,7 @@ int Grow_restart(struct supertype *st, struct mdinfo *info, int *fdlist,
 	unsigned long long *offsets;
 	unsigned long long  nstripe, ostripe;
 	int ndata, odata;
+	int fd, backup_fd = -1;
 
 	odata = info->array.raid_disks - info->delta_disks - 1;
 	if (info->array.level == 6)
@@ -4707,9 +4763,18 @@ int Grow_restart(struct supertype *st, struct mdinfo *info, int *fdlist,
 		 * been used
 		 */
 		old_disks = cnt;
+
+	if (backup_file) {
+		backup_fd = open(backup_file, O_RDONLY);
+		if (!is_fd_valid(backup_fd)) {
+			pr_err("Can't open backup file %s : %s\n",
+				backup_file, strerror(errno));
+			return -EINVAL;
+		}
+	}
+
 	for (i=old_disks-(backup_file?1:0); i<cnt; i++) {
 		struct mdinfo dinfo;
-		int fd;
 		int bsbsize;
 		char *devname, namebuf[20];
 		unsigned long long lo, hi;
@@ -4722,12 +4787,9 @@ int Grow_restart(struct supertype *st, struct mdinfo *info, int *fdlist,
 		 * else restore data and update all superblocks
 		 */
 		if (i == old_disks-1) {
-			fd = open(backup_file, O_RDONLY);
-			if (fd<0) {
-				pr_err("backup file %s inaccessible: %s\n",
-					backup_file, strerror(errno));
+			if (!is_fd_valid(backup_fd))
 				continue;
-			}
+			fd = backup_fd;
 			devname = backup_file;
 		} else {
 			fd = fdlist[i];
@@ -4882,6 +4944,7 @@ int Grow_restart(struct supertype *st, struct mdinfo *info, int *fdlist,
 				pr_err("Error restoring backup from %s\n",
 					devname);
 			free(offsets);
+			close_fd(&backup_fd);
 			return 1;
 		}
 
@@ -4898,6 +4961,7 @@ int Grow_restart(struct supertype *st, struct mdinfo *info, int *fdlist,
 				pr_err("Error restoring second backup from %s\n",
 					devname);
 			free(offsets);
+			close_fd(&backup_fd);
 			return 1;
 		}
 
@@ -4959,8 +5023,12 @@ int Grow_restart(struct supertype *st, struct mdinfo *info, int *fdlist,
 			st->ss->store_super(st, fdlist[j]);
 			st->ss->free_super(st);
 		}
+		close_fd(&backup_fd);
 		return 0;
 	}
+
+	close_fd(&backup_fd);
+
 	/* Didn't find any backup data, try to see if any
 	 * was needed.
 	 */
@@ -5033,7 +5101,11 @@ int Grow_continue_command(char *devname, int fd, struct context *c)
 			goto Grow_continue_command_exit;
 		}
 		content = &array;
-		sysfs_init(content, fd, NULL);
+		if (sysfs_init(content, fd, NULL) < 0) {
+			pr_err("sysfs_init fails\n");
+			ret_val = 1;
+			goto Grow_continue_command_exit;
+		}
 		/* Need to load a superblock.
 		 * FIXME we should really get what we need from
 		 * sysfs

@@ -23,9 +23,11 @@
  */
 
 #include	"mdadm.h"
-#include	"udev.h"
 #include	"md_p.h"
 #include	"md_u.h"
+#include	"udev.h"
+#include	"xmalloc.h"
+
 #include	<sys/wait.h>
 #include	<limits.h>
 #include	<syslog.h>
@@ -222,6 +224,11 @@ int Monitor(struct mddev_dev *devlist,
 
 	if (s_gethostname(info.hostname, sizeof(info.hostname)) != 0) {
 		pr_err("Cannot get hostname.\n");
+		return 1;
+	}
+
+	if (mkdir(MDMON_DIR, 0700) < 0 && errno != EEXIST) {
+		pr_err("Failed to create directory " MDMON_DIR ": %s\n", strerror(errno));
 		return 1;
 	}
 
@@ -432,12 +439,12 @@ static int make_daemon(char *pidfile)
 }
 
 /*
- * check_one_sharer() - Checks for other mdmon processes running.
+ * check_one_sharer() - Checks for other mdmonitor processes running.
  *
  * Return:
  * 0 - no other processes running,
  * 1 - warning,
- * 2 - error, or when scan mode is enabled, and one mdmon process already exists
+ * 2 - error, or when scan mode is enabled, and one mdmonitor process already exists
  */
 static int check_one_sharer(int scan)
 {
@@ -512,11 +519,6 @@ static int write_autorebuild_pid(void)
 {
 	FILE *fp;
 	int fd;
-
-	if (mkdir(MDMON_DIR, 0700) < 0 && errno != EEXIST) {
-		pr_err("%s: %s\n", strerror(errno), MDMON_DIR);
-		return 1;
-	}
 
 	if (!is_directory(MDMON_DIR)) {
 		pr_err("%s is not a regular directory.\n", MDMON_DIR);
@@ -879,9 +881,7 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 	}
 	last_disk = i;
 
-	if (mse->metadata_version &&
-	    strncmp(mse->metadata_version, "external:", 9) == 0 &&
-	    is_subarray(mse->metadata_version+9)) {
+	if (is_mdstat_ent_subarray(mse)) {
 		char *sl;
 		snprintf(st->parent_devnm, MD_NAME_MAX, "%s", mse->metadata_version + 10);
 		sl = strchr(st->parent_devnm, '/');
@@ -991,13 +991,12 @@ static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist)
 			snprintf(st->devnm, MD_NAME_MAX, "%s", mse->devnm);
 			st->percent = RESYNC_UNKNOWN;
 			st->expected_spares = -1;
-			if (mse->metadata_version &&
-			    strncmp(mse->metadata_version,
-				    "external:", 9) == 0 &&
-			    is_subarray(mse->metadata_version+9)) {
+
+			if (is_mdstat_ent_subarray(mse)) {
 				char *sl;
-				snprintf(st->parent_devnm, MD_NAME_MAX,
-					 "%s", mse->metadata_version + 10);
+
+				snprintf(st->parent_devnm, MD_NAME_MAX, "%s",
+					 mse->metadata_version + 10);
 				sl = strchr(st->parent_devnm, '/');
 				if (sl)
 					*sl = 0;
@@ -1297,8 +1296,7 @@ int Wait(char *dev)
 			}
 		}
 		if (!e || e->percent == RESYNC_NONE) {
-			if (e && e->metadata_version &&
-			    strncmp(e->metadata_version, "external:", 9) == 0) {
+			if (e && is_mdstat_ent_external(e)) {
 				if (is_subarray(&e->metadata_version[9]))
 					ping_monitor(&e->metadata_version[9]);
 				else

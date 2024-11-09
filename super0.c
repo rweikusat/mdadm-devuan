@@ -25,6 +25,8 @@
 #define HAVE_STDINT_H 1
 #include "mdadm.h"
 #include "sha1.h"
+#include "xmalloc.h"
+
 /*
  * All handling for the 0.90.0 version superblock is in
  * this file.
@@ -83,6 +85,9 @@ static void examine_super0(struct supertype *st, char *homehost)
 	int d;
 	int delta_extra = 0;
 	char *c;
+	unsigned long expected_csum = 0;
+
+	expected_csum = calc_sb0_csum(sb);
 
 	printf("          Magic : %08x\n", sb->md_magic);
 	printf("        Version : %d.%02d.%02d\n",
@@ -187,11 +192,11 @@ static void examine_super0(struct supertype *st, char *homehost)
 	printf("Working Devices : %d\n", sb->working_disks);
 	printf(" Failed Devices : %d\n", sb->failed_disks);
 	printf("  Spare Devices : %d\n", sb->spare_disks);
-	if (calc_sb0_csum(sb) == sb->sb_csum)
+	if (expected_csum == sb->sb_csum)
 		printf("       Checksum : %x - correct\n", sb->sb_csum);
 	else
 		printf("       Checksum : %x - expected %lx\n",
-		       sb->sb_csum, calc_sb0_csum(sb));
+		       sb->sb_csum, expected_csum);
 	printf("         Events : %llu\n",
 	       ((unsigned long long)sb->events_hi << 32) + sb->events_lo);
 	printf("\n");
@@ -229,7 +234,7 @@ static void examine_super0(struct supertype *st, char *homehost)
 	     d++) {
 		mdp_disk_t *dp;
 		char *dv;
-		char nb[11];
+		char nb[INT_2_DEC_STR_MAX];
 		int wonly, failfast;
 		if (d>=0) dp = &sb->disks[d];
 		else dp = &sb->this_disk;
@@ -1212,7 +1217,8 @@ static int locate_bitmap0(struct supertype *st, int fd, int node_num)
 
 	offset += MD_SB_BYTES;
 
-	lseek64(fd, offset, 0);
+	if (lseek64(fd, offset, 0) < 0)
+		return -1;
 	return 0;
 }
 
