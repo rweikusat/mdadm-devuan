@@ -1,3 +1,9 @@
+mdadm (4.3+20241108-1devuan1) unstable; urgency=medium
+
+  * Merge tag debian/4.3+20241108-1.
+
+ -- Mark Hindley <mark@hindley.org.uk>  Tue, 12 Nov 2024 21:17:17 +0000
+
 mdadm (4.3+20241108-1) sid; urgency=medium
 
   * Uploading to sid.
