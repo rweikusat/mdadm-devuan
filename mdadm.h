@@ -100,6 +100,11 @@ struct dlm_lksb {
 #define DEFAULT_BITMAP_DELAY 5
 #define DEFAULT_MAX_WRITE_BEHIND 256
 
+#ifndef DEV_DIR
+#define DEV_DIR "/dev/"
+#define DEV_DIR_LEN (sizeof(DEV_DIR) - 1)
+#endif /* DEV_DIR */
+
 /* DEV_NUM_PREF is a subpath to numbered MD devices, e.g. /dev/md1 or directory name.
  * DEV_NUM_PREF_LEN is a length with Null byte excluded.
  */
@@ -161,6 +166,7 @@ struct dlm_lksb {
 #include	"md_p.h"
 #include	"bitmap.h"
 #include	"msg.h"
+#include	"mdadm_status.h"
 
 #include <endian.h>
 /* Redhat don't like to #include <asm/byteorder.h>, and
@@ -408,7 +414,14 @@ struct mdinfo {
 	#define DS_BLOCKED	16
 	#define	DS_REMOVE	1024
 	#define	DS_UNBLOCK	2048
+	#define	DS_EXTERNAL_BB	4096
 	int prev_state, curr_state, next_state;
+
+	/* If set by monitor, managemon needs to remove faulty device */
+	bool man_disk_to_remove : 1;
+
+	/* Managemon cannot close descriptors if monitor is using them for select() */
+	bool mon_descriptors_not_used : 1;
 
 	/* info read from sysfs */
 	enum {
@@ -444,12 +457,6 @@ struct spare_criteria {
 	struct dev_policy *pols;
 };
 
-typedef enum mdadm_status {
-	MDADM_STATUS_SUCCESS = 0,
-	MDADM_STATUS_ERROR,
-	MDADM_STATUS_UNDEF,
-} mdadm_status_t;
-
 enum mode {
 	ASSEMBLE=1,
 	BUILD,
@@ -463,10 +470,8 @@ enum mode {
 	mode_count
 };
 
-extern char short_options[];
-extern char short_monitor_options[];
-extern char short_bitmap_options[];
-extern char short_bitmap_auto_options[];
+extern char short_opts[], short_monitor_opts[], short_bitmap_opts[], short_bitmap_auto_opts[];
+
 extern struct option long_options[];
 extern char Version[], Usage[], Help[], OptionHelp[],
 	*mode_help[],
@@ -634,7 +639,6 @@ struct mddev_ident {
 	int raid_disks;
 	int spare_disks;
 	struct supertype *st;
-	int	autof;		/* 1 for normal, 2 for partitioned */
 	char	*spare_group;
 	char	*bitmap_file;
 	int	bitmap_fd;
@@ -669,7 +673,6 @@ struct context {
 	enum	update_opt update;
 	int	scan;
 	int	SparcAdjust;
-	int	autof;
 	int	delay;
 	int	freeze_reshape;
 	char	*backup_file;
@@ -743,7 +746,11 @@ extern int mdstat_wait(int seconds);
 extern void mdstat_wait_fd(int fd, const sigset_t *sigmask);
 extern int mddev_busy(char *devnm);
 extern struct mdstat_ent *mdstat_by_component(char *name);
+extern struct mdstat_ent *mdstat_find_by_member_name(struct mdstat_ent *mdstat, char *member_devnm);
 extern struct mdstat_ent *mdstat_by_subdev(char *subdev, char *container);
+
+extern bool is_mdstat_ent_external(struct mdstat_ent *ent);
+extern bool is_mdstat_ent_subarray(struct mdstat_ent *ent);
 
 struct map_ent {
 	struct map_ent *next;
@@ -794,15 +801,17 @@ enum sysfs_read_flags {
 
 #define SYSFS_MAX_BUF_SIZE 64
 
+extern mdadm_status_t sysfs_write_descriptor(const int fd, const char *value,
+					     const ssize_t len, int *errno_p);
+extern mdadm_status_t write_attr(const char *value, const int fd);
 extern void sysfs_get_container_devnm(struct mdinfo *mdi, char *buf);
 
-/* If fd >= 0, get the array it is open on,
- * else use devnm.
- */
 extern int sysfs_open(char *devnm, char *devname, char *attr);
+extern int sysfs_open_memb_attr(char *array_devnm, char *memb_devnm, char *attr, int oflag);
 extern int sysfs_init(struct mdinfo *mdi, int fd, char *devnm);
 extern void sysfs_init_dev(struct mdinfo *mdi, dev_t devid);
 extern void sysfs_free(struct mdinfo *sra);
+
 extern struct mdinfo *sysfs_read(int fd, char *devnm, unsigned long options);
 extern int sysfs_attr_match(const char *attr, const char *str);
 extern int sysfs_match_word(const char *word, char **list);
@@ -1597,7 +1606,7 @@ extern int Incremental(struct mddev_dev *devlist, struct context *c,
 		       struct supertype *st);
 extern void RebuildMap(void);
 extern int IncrementalScan(struct context *c, char *devnm);
-extern int IncrementalRemove(char *devname, char *path, int verbose);
+extern int Incremental_remove(char *devname, char *path, int verbose);
 extern int CreateBitmap(char *filename, int force, char uuid[16],
 			unsigned long chunksize, unsigned long daemon_sleep,
 			unsigned long write_behind,
@@ -1749,8 +1758,6 @@ extern char *human_size(long long bytes);
 extern char *human_size_brief(long long bytes, int prefix);
 extern void print_r10_layout(int layout);
 
-extern char *find_free_devnm(int use_partitions);
-
 extern void put_md_name(char *name);
 extern char *devid2kname(dev_t devid);
 extern char *devid2devnm(dev_t devid);
@@ -1759,8 +1766,7 @@ extern char *get_md_name(char *devnm);
 
 extern char DefaultConfFile[];
 
-extern int create_mddev(char *dev, char *name, int autof, int trustworthy,
-			char *chosen, int block_udev);
+extern int create_mddev(char *dev, char *name, int trustworthy, char *chosen, int block_udev);
 /* values for 'trustworthy' */
 #define	LOCAL	1
 #define	LOCAL_ANY 10
@@ -1771,7 +1777,7 @@ extern int is_mddev(char *dev);
 extern int open_container(int fd);
 extern int metadata_container_matches(char *metadata, char *devnm);
 extern int metadata_subdev_matches(char *metadata, char *devnm);
-extern int is_container_member(struct mdstat_ent *ent, char *devname);
+extern bool is_container_member(struct mdstat_ent *ent, char *devname);
 extern int is_subarray_active(char *subarray, char *devname);
 extern int open_subarray(char *dev, char *subarray, struct supertype *st, int quiet);
 extern struct superswitch *version_to_superswitch(char *vers);
@@ -1925,11 +1931,6 @@ static inline int xasprintf(char **strp, const char *fmt, ...) {
 
 #define pr_vrb(fmt, arg...) ((void)(verbose && pr_err(fmt, ##arg)))
 
-void *xmalloc(size_t len);
-void *xrealloc(void *ptr, size_t len);
-void *xcalloc(size_t num, size_t size);
-char *xstrdup(const char *str);
-
 #define	LEVEL_MULTIPATH		(-4)
 #define	LEVEL_LINEAR		(-1)
 #define	LEVEL_FAULTY		(-5)
@@ -2020,6 +2021,9 @@ enum r0layout {
 #ifndef PATH_MAX
 #define PATH_MAX	4096
 #endif
+
+/* The max string length necessary for decimal conversion, cannot be longer than count of bits */
+#define INT_2_DEC_STR_MAX (sizeof(int) * 8)
 
 #define RESYNC_NONE -1
 #define RESYNC_DELAYED -2

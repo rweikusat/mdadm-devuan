@@ -30,6 +30,7 @@
 #include <sys/un.h>
 #include "mdadm.h"
 #include "mdmon.h"
+#include "xmalloc.h"
 
 static const __u32 start_magic = 0x5a5aa5a5;
 static const __u32 end_magic = 0xa5a55a5a;
@@ -176,8 +177,15 @@ int connect_monitor(char *devname)
 	}
 
 	fl = fcntl(sfd, F_GETFL, 0);
+	if (fl < 0) {
+		close(sfd);
+		return -1;
+	}
 	fl |= O_NONBLOCK;
-	fcntl(sfd, F_SETFL, fl);
+	if (fcntl(sfd, F_SETFL, fl) < 0) {
+		close(sfd);
+		return -1;
+	}
 
 	return sfd;
 }

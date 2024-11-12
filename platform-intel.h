@@ -106,7 +106,12 @@ struct imsm_orom {
 	#define IMSM_OROM_CAPABILITIES_ReadPatrol (1 << 6)
 	#define IMSM_OROM_CAPABILITIES_XorHw (1 << 7)
 	#define IMSM_OROM_CAPABILITIES_SKUMode ((1 << 8)|(1 << 9))
+	#define IMSM_OROM_CAPABILITIES_SKUMode_LOW ((1 << 8) | (1 << 9))
+	#define IMSM_OROM_CAPABILITIES_SKUMode_LOW_SHIFT 8
 	#define IMSM_OROM_CAPABILITIES_TPV (1 << 10)
+	#define IMSM_OROM_CAPABILITIES_SKUMode_HIGH ((1 << 11) | (1 << 12))
+	#define IMSM_OROM_CAPABILITIES_SKUMode_HIGH_SHIFT 9
+	#define IMSM_OROM_CAPABILITIES_SKUMode_NON_PRODUCTION (1 << 13)
 } __attribute__((packed));
 
 /* IMSM metadata requirements for each level */
@@ -257,7 +262,7 @@ const struct imsm_orom *find_imsm_orom(void);
 int disk_attached_to_hba(int fd, const char *hba_path);
 int devt_attached_to_hba(dev_t dev, const char *hba_path);
 char *devt_to_devpath(dev_t dev, int dev_level, char *buf);
-int path_attached_to_hba(const char *disk_path, const char *hba_path);
+bool is_path_attached_to_hba(const char *disk_path, const char *hba_path);
 const struct orom_entry *get_orom_entry_by_device_id(__u16 dev_id);
 const struct imsm_orom *get_orom_by_device_id(__u16 device_id);
 struct sys_dev *device_by_id(__u16 device_id);

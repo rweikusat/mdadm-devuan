@@ -29,6 +29,8 @@
  */
 
 #include	"mdadm.h"
+#include	"xmalloc.h"
+
 #include	<sys/wait.h>
 #include	<dirent.h>
 #include	<ctype.h>
@@ -104,8 +106,6 @@ int Incremental(struct mddev_dev *devlist, struct context *c,
 	int have_target;
 	char *devname = devlist->devname;
 	int journal_device_missing = 0;
-
-	struct createinfo *ci = conf_get_create_info();
 
 	if (!stat_is_blkdev(devname, &rdev))
 		return rv;
@@ -232,16 +232,6 @@ int Incremental(struct mddev_dev *devlist, struct context *c,
 	if (trustworthy == LOCAL_ANY)
 		trustworthy = LOCAL;
 
-	/* There are three possible sources for 'autof':  command line,
-	 * ARRAY line in mdadm.conf, or CREATE line in mdadm.conf.
-	 * ARRAY takes precedence, then command line, then
-	 * CREATE.
-	 */
-	if (match && match->autof)
-		c->autof = match->autof;
-	if (c->autof == 0)
-		c->autof = ci->autof;
-
 	name_to_use = info.name;
 	if (name_to_use[0] == 0 && is_container(info.array.level)) {
 		name_to_use = info.text_version;
@@ -295,8 +285,8 @@ int Incremental(struct mddev_dev *devlist, struct context *c,
 			goto out;
 
 		/* Couldn't find an existing array, maybe make a new one */
-		mdfd = create_mddev(match ? match->devname : NULL,
-				    name_to_use, c->autof, trustworthy, chosen_name, 0);
+		mdfd = create_mddev(match ? match->devname : NULL, name_to_use, trustworthy,
+				    chosen_name, 0);
 
 		if (mdfd < 0)
 			goto out_unlock;
@@ -770,7 +760,7 @@ static int count_active(struct supertype *st, struct mdinfo *sra,
 			replcnt++;
 		st->ss->free_super(st);
 	}
-	if (max_journal_events >= max_events - 1)
+	if (max_events > 0 && max_journal_events >= max_events - 1)
 		bestinfo->journal_clean = 1;
 
 	if (!avail)
@@ -1113,7 +1103,7 @@ static int partition_try_spare(char *devname, int *dfdp, struct dev_policy *pol,
 		int fd = -1;
 		struct mdinfo info;
 		struct supertype *st2 = NULL;
-		char *devname = NULL;
+		char *dev_path_name = NULL;
 		unsigned long long devsectors;
 		char *pathlist[2];
 
@@ -1142,14 +1132,14 @@ static int partition_try_spare(char *devname, int *dfdp, struct dev_policy *pol,
 		domain_free(domlist);
 		domlist = NULL;
 
-		if (asprintf(&devname, "/dev/disk/by-path/%s", de->d_name) != 1) {
-			devname = NULL;
+		if (asprintf(&dev_path_name, "/dev/disk/by-path/%s", de->d_name) != 1) {
+			dev_path_name = NULL;
 			goto next;
 		}
-		fd = open(devname, O_RDONLY);
+		fd = open(dev_path_name, O_RDONLY);
 		if (fd < 0)
 			goto next;
-		if (get_dev_size(fd, devname, &devsectors) == 0)
+		if (get_dev_size(fd, dev_path_name, &devsectors) == 0)
 			goto next;
 		devsectors >>= 9;
 
@@ -1188,8 +1178,8 @@ static int partition_try_spare(char *devname, int *dfdp, struct dev_policy *pol,
 		if (chosen == NULL || chosen_size < info.component_size) {
 			chosen_size = info.component_size;
 			free(chosen);
-			chosen = devname;
-			devname = NULL;
+			chosen = dev_path_name;
+			dev_path_name = NULL;
 			if (chosen_st) {
 				chosen_st->ss->free_super(chosen_st);
 				free(chosen_st);
@@ -1199,7 +1189,7 @@ static int partition_try_spare(char *devname, int *dfdp, struct dev_policy *pol,
 		}
 
 	next:
-		free(devname);
+		free(dev_path_name);
 		domain_free(domlist);
 		dev_policy_free(pol2);
 		if (st2)
@@ -1246,7 +1236,7 @@ static int is_bare(int dfd)
 
 	/* OK, first 4K appear blank, try the end. */
 	get_dev_size(dfd, NULL, &size);
-	if (lseek(dfd, size-4096, SEEK_SET) < 0 ||
+	if ((size >= 4096 && lseek(dfd, size-4096, SEEK_SET) < 0) ||
 	    read(dfd, buf, 4096) != 4096)
 		return 0;
 
@@ -1605,10 +1595,7 @@ static int Incremental_container(struct supertype *st, char *devname,
 			if (match)
 				trustworthy = LOCAL;
 
-			mdfd = create_mddev(match ? match->devname : NULL,
-					    ra->name,
-					    c->autof,
-					    trustworthy,
+			mdfd = create_mddev(match ? match->devname : NULL, ra->name, trustworthy,
 					    chosen_name, 0);
 
 			if (!is_fd_valid(mdfd)) {
@@ -1674,42 +1661,71 @@ static void remove_from_member_array(struct mdstat_ent *memb,
 	}
 }
 
-/*
- * IncrementalRemove - Attempt to see if the passed in device belongs to any
- * raid arrays, and if so first fail (if needed) and then remove the device.
+/**
+ * is_devnode_path() - check if the devname passed might be devnode path.
+ * @devnode: the path to check.
  *
- * @devname - The device we want to remove
- * @id_path - name as found in /dev/disk/by-path for this device
- *
- * Note: the device name must be a kernel name like "sda", so
- * that we can find it in /proc/mdstat
+ * Devnode must be located directly in /dev directory. It is not checking existence of the file
+ * because the device might no longer exist during removal from raid array.
  */
-int IncrementalRemove(char *devname, char *id_path, int verbose)
+static bool is_devnode_path(char *devnode)
 {
-	int mdfd;
-	int rv = 0;
-	struct mdstat_ent *ent;
-	struct mddev_dev devlist;
-	struct mdinfo mdi;
+	char *devnm = strrchr(devnode, '/');
+
+	if (!devnm || *(devnm + 1) == 0)
+		return false;
+
+	if (strncmp(devnode, DEV_DIR, DEV_DIR_LEN) == 0 && devnode + DEV_DIR_LEN - 1 == devnm)
+		return true;
+
+	return false;
+}
+
+/**
+ * Incremental_remove() - Remove the device from all raid arrays.
+ * @devname: the device we want to remove, it could be kernel device name or devnode.
+ * @id_path: optional, /dev/disk/by-path path to save for bare scenarios support.
+ * @verbose: verbose flag.
+ *
+ * First, fail the device (if needed) and then remove the device from native raid array or external
+ * container.  If it is external container, the device is removed from each subarray first.
+ */
+int Incremental_remove(char *devname, char *id_path, int verbose)
+{
+	char *devnm = basename(devname);
+	struct mddev_dev devlist = {0};
 	char buf[SYSFS_MAX_BUF_SIZE];
+	struct mdstat_ent *mdstat;
+	struct mdstat_ent *ent;
+	struct mdinfo mdi;
+	int rv = 1;
+	int mdfd;
 
-	if (!id_path)
-		dprintf("incremental removal without --path <id_path> lacks the possibility to re-add new device in this port\n");
+	if (strcmp(devnm, devname) != 0)
+		if (!is_devnode_path(devname)) {
+			pr_err("Cannot remove \"%s\", devnode path or kernel device name is allowed.\n",
+			       devname);
+			return 1;
+		}
 
-	if (strchr(devname, '/')) {
-		pr_err("incremental removal requires a kernel device name, not a file: %s\n", devname);
+	mdstat = mdstat_read(0, 0);
+	if (!mdstat) {
+		pr_err("Cannot read /proc/mdstat file, aborting\n");
 		return 1;
 	}
-	ent = mdstat_by_component(devname);
+
+	ent = mdstat_find_by_member_name(mdstat, devnm);
 	if (!ent) {
 		if (verbose >= 0)
-			pr_err("%s does not appear to be a component of any array\n", devname);
-		return 1;
+			pr_vrb("%s does not appear to be a component of any array\n", devnm);
+		goto out;
 	}
+
 	if (sysfs_init(&mdi, -1, ent->devnm)) {
-		pr_err("unable to initialize sysfs for: %s\n", devname);
-		return 1;
+		pr_err("unable to initialize sysfs for: %s\n", devnm);
+		goto out;
 	}
+
 	mdfd = open_dev_excl(ent->devnm);
 	if (is_fd_valid(mdfd)) {
 		close_fd(&mdfd);
@@ -1725,8 +1741,7 @@ int IncrementalRemove(char *devname, char *id_path, int verbose)
 	if (mdfd < 0) {
 		if (verbose >= 0)
 			pr_err("Cannot open array %s!!\n", ent->devnm);
-		free_mdstat(ent);
-		return 1;
+		goto out;
 	}
 
 	if (id_path) {
@@ -1737,20 +1752,16 @@ int IncrementalRemove(char *devname, char *id_path, int verbose)
 		map_free(map);
 	}
 
-	memset(&devlist, 0, sizeof(devlist));
-	devlist.devname = devname;
+	devlist.devname = devnm;
 	devlist.disposition = 'I';
 	/* for a container, we must fail each member array */
-	if (ent->metadata_version &&
-	    strncmp(ent->metadata_version, "external:", 9) == 0) {
-		struct mdstat_ent *mdstat = mdstat_read(0, 0);
+	if (is_mdstat_ent_external(ent)) {
 		struct mdstat_ent *memb;
 		for (memb = mdstat ; memb ; memb = memb->next) {
 			if (is_container_member(memb, ent->devnm))
 				remove_from_member_array(memb,
 					&devlist, verbose);
 		}
-		free_mdstat(mdstat);
 	} else {
 		/*
 		 * This 'I' incremental remove is a try-best effort,
@@ -1765,7 +1776,8 @@ int IncrementalRemove(char *devname, char *id_path, int verbose)
 	rv = Manage_subdevs(ent->devnm, mdfd, &devlist,
 			    verbose, 0, UOPT_UNDEFINED, 0);
 
-	close(mdfd);
-	free_mdstat(ent);
+	close_fd(&mdfd);
+out:
+	free_mdstat(mdstat);
 	return rv;
 }
