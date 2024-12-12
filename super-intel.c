@@ -5092,7 +5092,6 @@ imsm_thunderdome(struct intel_super **super_list, int len)
 	for (i = 0; i < tbl_size; i++) {
 		struct imsm_disk *d;
 		struct intel_disk *idisk;
-		struct imsm_super *mpb = super_table[i]->anchor;
 
 		s = super_table[i];
 		d = &s->disks->disk;
@@ -5108,7 +5107,7 @@ imsm_thunderdome(struct intel_super **super_list, int len)
 
 		if (!s)
 			dprintf("marking family: %#x from %d:%d offline\n",
-				mpb->family_num,
+				super_table[i]->anchor->family_num,
 				super_table[i]->disks->major,
 				super_table[i]->disks->minor);
 		super_table[i] = s;
@@ -6122,7 +6121,8 @@ static int add_to_super_imsm(struct supertype *st, mdu_disk_info_t *dk,
 			pr_err("%s controller supports Multi-Path I/O, Intel (R) VROC does not support multipathing\n",
 			       basename(cntrl_path));
 
-		if (super->orom && !imsm_orom_has_tpv_support(super->orom)) {
+		if (super->orom && devpath_to_vendor(pci_dev_path) != 0x8086 &&
+		    !imsm_orom_has_tpv_support(super->orom)) {
 			pr_err("\tPlatform configuration does not support non-Intel NVMe drives.\n"
 			       "\tPlease refer to Intel(R) RSTe/VROC user guide.\n");
 			goto error;
@@ -7056,7 +7056,8 @@ active_arrays_by_format(char *name, char* hba, struct md_list **devlist,
 			int fd = -1;
 
 			while (dev && !is_fd_valid(fd)) {
-				char *path = xmalloc(strlen(dev->name) + strlen("/dev/") + 1);
+				char path[PATH_MAX];
+
 				num = snprintf(path, PATH_MAX, "%s%s", "/dev/", dev->name);
 				if (num > 0)
 					fd = open(path, O_RDONLY, 0);
@@ -7064,7 +7065,6 @@ active_arrays_by_format(char *name, char* hba, struct md_list **devlist,
 					pr_vrb("Cannot open %s: %s\n",
 					       dev->name, strerror(errno));
 				}
-				free(path);
 				dev = dev->next;
 			}
 			found = 0;

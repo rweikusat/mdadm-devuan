@@ -95,10 +95,21 @@ mdadm() {
 	return $rv
 }
 
+print_time_elapsed() {
+	local start_sec=$1
+	local end_sec=$(date +%s)
+
+	local execution_time=$((end_sec - start_sec))
+
+	echo -ne "Execution time (seconds): ${execution_time} "
+}
+
 do_test() {
 	_script=$1
 	_basename=`basename $_script`
 	_broken=0
+
+	local start_sec=$(date +%s)
 
 	if [ -f "$_script" ]
 	then
@@ -121,6 +132,7 @@ do_test() {
 		echo -ne "$_script... "
 		if ( set -ex ; . $_script ) &> $targetdir/log
 		then
+			print_time_elapsed $start_sec
 			if [ -f "${_script}.inject_error" ]; then
 				echo "dmesg checking is skipped because test inject error"
 			else
@@ -130,6 +142,7 @@ do_test() {
 			succeed "succeeded\n"
 			_fail=0
 		else
+			print_time_elapsed $start_sec
 			save_log fail
 			_fail=1
 			if [ "$_broken" == "1" ]; then
@@ -137,11 +150,14 @@ do_test() {
 			fi
 		fi
 		restore_system_speed_limit
-		[ "$savelogs" == "1" ] &&
-			mv -f $targetdir/log $logdir/$_basename.log
+
+		[ "$savelogs" == "1" ] && mv -f $targetdir/log $logdir/$_basename.log
+
 		[ "$ctrl_c_error" == "1" ] && exit 1
-		[ "$_fail" == "1" -a "$exitonerror" == "1" \
-		  -a "$_broken" == "0" ] && exit 1
+
+		[ "$_fail" == "1" -a "$exitonerror" == "1" -a "$_broken" == "0" ] && exit 1
+
+		[ "$_fail" == "1" ] && do_test_ret=1
 	fi
 }
 
@@ -327,6 +343,8 @@ main() {
 	[ "$savelogs" == "1" ] &&
 		echo "Saving logs to $logdir"
 
+	do_test_ret=0
+
 	while true; do
 		if [ "x$TESTLIST" != "x" ]
 		then
@@ -337,11 +355,10 @@ main() {
 		else
 			for script in $testdir/$prefix $testdir/$prefix*[^~]
 			do
-				case $script in
-				 *.broken) ;;
+				case $script in *.broken) ;;
 				 *)
 				     do_test $script
-				 esac
+				esac
 			done
 		fi
 
@@ -352,7 +369,7 @@ main() {
 	done
 
 	restore_selinux
-	exit 0
+	exit $do_test_ret
 }
 
 parse_args $@
