@@ -1,3 +1,20 @@
+mdadm (4.4-1) sid; urgency=high
+
+  * Uploading to sid.
+  * Merging upstream version 4.4.
+  * Cherry-picking patch from upstream to update manpage about bitmaps
+    being not default anymore (Closes: #1092137).
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Tue, 14 Jan 2025 11:32:30 +0100
+
+mdadm (4.3+20241202-1.1) sid; urgency=high
+
+  * Non-maintainer upload.
+  * Fix chroot detection to avoid displaying the systemd note when mdadm
+    is getting installed within d-i (Closes: #1091617).
+
+ -- Cyril Brulebois <kibi@debian.org>  Sat, 28 Dec 2024 20:46:53 +0100
+
 mdadm (4.3+20241202-1devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.3+20241202-1.
