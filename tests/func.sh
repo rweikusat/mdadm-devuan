@@ -59,7 +59,7 @@ save_log() {
 	array=($(mdadm -Ds | cut -d' ' -f2))
 	[ "$1" == "fail" ] &&
 		fail "FAILED"
-		echo " - see $logdir/$_basename.log and $logdir/$logfile for details\n"
+		echo " - see $logdir/$_basename.log and $logdir/$logfile for details"
 	if [ $DEVTYPE == 'lvm' ]
 	then
 		# not supported lvm type yet
@@ -209,7 +209,7 @@ wait_for_reshape_end() {
 	do
 		sync_action=$(grep -Ec '(resync|recovery|reshape|check|repair) *=' /proc/mdstat)
 		if (( "$sync_action" != 0 )); then
-			sleep 1
+			sleep 2
 			continue
 		elif [[ $(pgrep -f "mdadm --grow --continue" > /dev/null) != "" ]]; then
 			echo "Grow continue did not finish but reshape is done" >&2
@@ -381,7 +381,7 @@ check() {
 		do
 			sync_action=$(grep -Ec '(resync|recovery|reshape|check|repair) *=' /proc/mdstat)
 			if (( "$sync_action" == 0 )); then
-				sleep 1
+				sleep 2
 				iterations=$(( $iterations + 1 ))
 				continue
 			else
@@ -445,7 +445,7 @@ no_errors() {
 
 # basic device test
 testdev() {
-	[ -b $1 ] || die "$1 isn't a block device."
+	lsblk -no name $1 || die "$1 isn't a block device."
 	[ "$DEVTYPE" == "disk" ] && return 0
 	udevadm settle
 	dev=$1
