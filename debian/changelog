@@ -1,3 +1,9 @@
+mdadm (4.4-1devuan1) unstable; urgency=medium
+
+  * Merge tag debian/4.4-1.
+
+ -- Mark Hindley <mark@hindley.org.uk>  Tue, 14 Jan 2025 15:12:59 +0000
+
 mdadm (4.4-1) sid; urgency=high
 
   * Uploading to sid.
