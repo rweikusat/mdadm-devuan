@@ -1,3 +1,11 @@
+mdadm (4.4-3) sid; urgency=medium
+
+  * Uploading to sid.
+  * Adding updated German debconf translations from Helge Kreutzmann
+    <debian@helgefjell.de> (Closes: #1094018).
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Mon, 27 Jan 2025 17:19:15 +0100
+
 mdadm (4.4-2) sid; urgency=medium
 
   * Uploading to sid.
