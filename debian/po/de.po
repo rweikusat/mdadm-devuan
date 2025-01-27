@@ -5,10 +5,10 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mdadm 4.2+20231026-1\n"
+"Project-Id-Version: mdadm 4.4-2\n"
 "Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
 "POT-Creation-Date: 2025-01-23 07:30+0100\n"
-"PO-Revision-Date: 2023-11-09 21:30+0100\n"
+"PO-Revision-Date: 2025-01-24 18:46+0100\n"
 "Last-Translator: Helge Kreutzmann <debian@helgefjell.de>\n"
 "Language-Team: German <debian-l10n-german@lists.debian.org>\n"
 "Language: de\n"
@@ -37,12 +37,6 @@ msgstr ""
 #. Type: note
 #. Description
 #: ../mdadm.templates:2001
-#, fuzzy
-#| msgid ""
-#| "Beginning with newer versions of the mdadm package, init-system "
-#| "integration is available for systemd only. This system seems to use an "
-#| "alternative init-system which might or might not leave your system "
-#| "unbootable."
 msgid ""
 "Beginning with newer versions of the mdadm package, init-system integration "
 "is available for systemd only. This system seems to use an alternative init-"
@@ -52,7 +46,8 @@ msgstr ""
 "Beginnend mit neueren Versionen des Pakets Mdadm, ist die Init-System-"
 "Integration nur noch für Systemd verfügbar. Dieses System scheint ein "
 "alternatives Init-System zu verwenden, wodurch es sein könnte, dass Ihr "
-"System nicht mehr startbar ist."
+"System nicht mehr startbar ist und keine Wartungsaufträge automatisch "
+"ausgeführt werden."
 
 #. Type: boolean
 #. Description
