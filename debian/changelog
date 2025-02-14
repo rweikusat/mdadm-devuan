@@ -1,3 +1,15 @@
+mdadm (4.3+20241108-1) sid; urgency=medium
+
+  * Uploading to sid.
+  * Merging upstream version 4.3+20241108.
+  * Removing mdmonitor-service-simplify.patch, not needed anymore.
+  * Renumbering patches.
+  * Refreshing host-name-in-default-mailfrom.patch.
+  * Refreshing exit-gracefully-when-md-device-not-found.patch.
+  * Adding missing header to fix FTBFS.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Sat, 09 Nov 2024 12:41:57 +0100
+
 mdadm (4.3+20240723-2) sid; urgency=medium
 
   * Uploading to sid.
