@@ -1,3 +1,10 @@
+mdadm (4.3+20240723-1) sid; urgency=medium
+
+  * Uploading to sid.
+  * Merging upstream version 4.3+20240723.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Thu, 25 Jul 2024 08:17:15 +0200
+
 mdadm (4.3+20240412-1) sid; urgency=medium
 
   * Uploading to sid.
