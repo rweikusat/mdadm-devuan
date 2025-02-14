@@ -1,3 +1,12 @@
+mdadm (4.4-4) sid; urgency=medium
+
+  * Updating vcs fields.
+  * Updating my email address.
+  * Updating year in debian copyright for 2025.
+  * Trimming debian changelog.
+
+ -- Daniel Baumann <daniel@debian.org>  Fri, 14 Feb 2025 06:44:04 +0100
+
 mdadm (4.4-3) sid; urgency=medium
 
   * Adding updated German debconf translations from Helge Kreutzmann
