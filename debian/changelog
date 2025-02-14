@@ -1,3 +1,23 @@
+mdadm (4.2+20230227-1) experimental; urgency=medium
+
+  * Uploading to experimental.
+  * Merging upstream version 4.2+20230227.
+  * Removing sysvinit scripts in favour of systemd units:
+    - properly checkrestart mdmonitor (Closes: #815834).
+    - no update-rc.d warnings anymore (Closes: #822354).
+    - properly shutdown (Closes: #829621).
+    - making /etc/default/mdadm obsolete for most things (Closes: #850180).
+  * Removing cron jobs in favour of systemd timers:
+    - daily checks also work if system is not always on (Closes: #889978).
+  * Adding rediffed patch from ubuntu to randomize md array check timers.
+  * Adding rediffed patch from ubuntu to honor debconf daily scan in
+    systemd unit.
+  * Adding rediffed patch from ubuntu to fix empty spaces in timer unit
+    files.
+  * Wrap and sorting debian directory.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Tue, 28 Feb 2023 20:48:50 +0100
+
 mdadm (4.2+20230223-2) experimental; urgency=medium
 
   * Uploading to experimental.
