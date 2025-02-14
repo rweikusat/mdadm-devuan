@@ -1,3 +1,10 @@
+mdadm (4.2+20230313-1) experimental; urgency=medium
+
+  * Uploading to experimental.
+  * Merging upstream version 4.2+20230313.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Mon, 13 Mar 2023 17:55:55 +0100
+
 mdadm (4.2+20230304-1) experimental; urgency=medium
 
   * Uploading to experimental.
