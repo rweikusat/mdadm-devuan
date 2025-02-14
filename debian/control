@@ -22,9 +22,8 @@ Depends:
  ${shlibs:Depends},
 Recommends:
  kmod,
- ${mta:Recommends},
 Suggests:
- ${mta:Suggests},
+ default-mta | mail-transport-agent,
 Description: tool for managing Linux MD devices (software RAID)
  The mdadm tool is used to create, manage, and monitor Linux MD (software
  RAID) devices.
