@@ -1,6 +1,6 @@
 debian/0001-fix-manpages.patch
 debian/0002-mdmonitor-service-simplify.patch
-host-name-in-default-mailfrom.patch
+debian/0003-host-name-in-default-mailfrom.patch
 exit-gracefully-when-md-device-not-found.patch
 sha1-includes.diff
 readlink-path.patch
