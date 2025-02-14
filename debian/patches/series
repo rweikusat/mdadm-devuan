@@ -1,4 +1,4 @@
-fix-manpages.patch
+debian/0001-fix-manpages.patch
 mdmonitor-service-simplify.diff
 host-name-in-default-mailfrom.patch
 exit-gracefully-when-md-device-not-found.patch
