@@ -1,3 +1,12 @@
+mdadm (4.2+20230304-1) experimental; urgency=medium
+
+  * Uploading to experimental.
+  * Merging upstream version 4.2+20230304.
+  * Adding initial Romanian debconf translations from Remus-Gabriel Chelu
+    <remusgabriel.chelu@disroot.org> (Closes: #1032713).
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Mon, 13 Mar 2023 14:58:14 +0100
+
 mdadm (4.2+20230302-1) experimental; urgency=medium
 
   * Uploading to experimental.
