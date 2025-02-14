@@ -503,13 +503,6 @@ struct ddf_super {
 static int load_super_ddf_all(struct supertype *st, int fd,
 			      void **sbp, char *devname);
 static int get_svd_state(const struct ddf_super *, const struct vcl *);
-static int
-validate_geometry_ddf_container(struct supertype *st,
-				int level, int layout, int raiddisks,
-				int chunk, unsigned long long size,
-				unsigned long long data_offset,
-				char *dev, unsigned long long *freesize,
-				int verbose);
 
 static int validate_geometry_ddf_bvd(struct supertype *st,
 				     int level, int layout, int raiddisks,
@@ -1477,13 +1470,13 @@ static void examine_vds(struct ddf_super *sb)
 		printf("\n");
 		printf("         unit[%d] : %d\n", i, be16_to_cpu(ve->unit));
 		printf("        state[%d] : %s, %s%s\n", i,
-		       map_num(ddf_state, ve->state & 7),
+		       map_num_s(ddf_state, ve->state & 7),
 		       (ve->state & DDF_state_morphing) ? "Morphing, ": "",
 		       (ve->state & DDF_state_inconsistent)? "Not Consistent" : "Consistent");
 		printf("   init state[%d] : %s\n", i,
-		       map_num(ddf_init_state, ve->init_state&DDF_initstate_mask));
+		       map_num_s(ddf_init_state, ve->init_state & DDF_initstate_mask));
 		printf("       access[%d] : %s\n", i,
-		       map_num(ddf_access, (ve->init_state & DDF_access_mask) >> 6));
+		       map_num_s(ddf_access, (ve->init_state & DDF_access_mask) >> 6));
 		printf("         Name[%d] : %.16s\n", i, ve->name);
 		examine_vd(i, sb, ve->guid);
 	}
@@ -2144,75 +2137,6 @@ static void getinfo_super_ddf_bvd(struct supertype *st, struct mdinfo *info, cha
 					map[i] = 1;
 			}
 		}
-}
-
-static int update_super_ddf(struct supertype *st, struct mdinfo *info,
-			    char *update,
-			    char *devname, int verbose,
-			    int uuid_set, char *homehost)
-{
-	/* For 'assemble' and 'force' we need to return non-zero if any
-	 * change was made.  For others, the return value is ignored.
-	 * Update options are:
-	 *  force-one : This device looks a bit old but needs to be included,
-	 *        update age info appropriately.
-	 *  assemble: clear any 'faulty' flag to allow this device to
-	 *		be assembled.
-	 *  force-array: Array is degraded but being forced, mark it clean
-	 *	   if that will be needed to assemble it.
-	 *
-	 *  newdev:  not used ????
-	 *  grow:  Array has gained a new device - this is currently for
-	 *		linear only
-	 *  resync: mark as dirty so a resync will happen.
-	 *  uuid:  Change the uuid of the array to match what is given
-	 *  homehost:  update the recorded homehost
-	 *  name:  update the name - preserving the homehost
-	 *  _reshape_progress: record new reshape_progress position.
-	 *
-	 * Following are not relevant for this version:
-	 *  sparc2.2 : update from old dodgey metadata
-	 *  super-minor: change the preferred_minor number
-	 *  summaries:  update redundant counters.
-	 */
-	int rv = 0;
-//	struct ddf_super *ddf = st->sb;
-//	struct vd_config *vd = find_vdcr(ddf, info->container_member);
-//	struct virtual_entry *ve = find_ve(ddf);
-
-	/* we don't need to handle "force-*" or "assemble" as
-	 * there is no need to 'trick' the kernel.  When the metadata is
-	 * first updated to activate the array, all the implied modifications
-	 * will just happen.
-	 */
-
-	if (strcmp(update, "grow") == 0) {
-		/* FIXME */
-	} else if (strcmp(update, "resync") == 0) {
-//		info->resync_checkpoint = 0;
-	} else if (strcmp(update, "homehost") == 0) {
-		/* homehost is stored in controller->vendor_data,
-		 * or it is when we are the vendor
-		 */
-//		if (info->vendor_is_local)
-//			strcpy(ddf->controller.vendor_data, homehost);
-		rv = -1;
-	} else if (strcmp(update, "name") == 0) {
-		/* name is stored in virtual_entry->name */
-//		memset(ve->name, ' ', 16);
-//		strncpy(ve->name, info->name, 16);
-		rv = -1;
-	} else if (strcmp(update, "_reshape_progress") == 0) {
-		/* We don't support reshape yet */
-	} else if (strcmp(update, "assemble") == 0 ) {
-		/* Do nothing, just succeed */
-		rv = 0;
-	} else
-		rv = -1;
-
-//	update_all_csum(ddf);
-
-	return rv;
 }
 
 static void make_header_guid(char *guid)
@@ -3322,6 +3246,42 @@ static int reserve_space(struct supertype *st, int raiddisks,
 	return 1;
 }
 
+static int
+validate_geometry_ddf_container(struct supertype *st,
+				int level, int raiddisks,
+				unsigned long long data_offset,
+				char *dev, unsigned long long *freesize,
+				int verbose)
+{
+	int fd;
+	unsigned long long ldsize;
+
+	if (!is_container(level))
+		return 0;
+	if (!dev)
+		return 1;
+
+	fd = dev_open(dev, O_RDONLY|O_EXCL);
+	if (fd < 0) {
+		if (verbose)
+			pr_err("ddf: Cannot open %s: %s\n",
+			       dev, strerror(errno));
+		return 0;
+	}
+	if (!get_dev_size(fd, dev, &ldsize)) {
+		close(fd);
+		return 0;
+	}
+	close(fd);
+	if (freesize) {
+		*freesize = avail_size_ddf(st, ldsize >> 9, INVALID_SECTORS);
+		if (*freesize == 0)
+			return 0;
+	}
+
+	return 1;
+}
+
 static int validate_geometry_ddf(struct supertype *st,
 				 int level, int layout, int raiddisks,
 				 int *chunk, unsigned long long size,
@@ -3340,19 +3300,17 @@ static int validate_geometry_ddf(struct supertype *st,
 	 * If given BVDs, we make an SVD, changing all the GUIDs in the process.
 	 */
 
-	if (*chunk == UnSet)
-		*chunk = DEFAULT_CHUNK;
-
 	if (level == LEVEL_NONE)
 		level = LEVEL_CONTAINER;
-	if (level == LEVEL_CONTAINER) {
+	if (is_container(level)) {
 		/* Must be a fresh device to add to a container */
-		return validate_geometry_ddf_container(st, level, layout,
-						       raiddisks, *chunk,
-						       size, data_offset, dev,
-						       freesize,
-						       verbose);
+		return validate_geometry_ddf_container(st, level, raiddisks,
+						       data_offset, dev,
+						       freesize, verbose);
 	}
+
+	if (*chunk == UnSet)
+		*chunk = DEFAULT_CHUNK;
 
 	if (!dev) {
 		mdu_array_info_t array = {
@@ -3449,43 +3407,6 @@ static int validate_geometry_ddf(struct supertype *st,
 	return 1;
 }
 
-static int
-validate_geometry_ddf_container(struct supertype *st,
-				int level, int layout, int raiddisks,
-				int chunk, unsigned long long size,
-				unsigned long long data_offset,
-				char *dev, unsigned long long *freesize,
-				int verbose)
-{
-	int fd;
-	unsigned long long ldsize;
-
-	if (level != LEVEL_CONTAINER)
-		return 0;
-	if (!dev)
-		return 1;
-
-	fd = dev_open(dev, O_RDONLY|O_EXCL);
-	if (fd < 0) {
-		if (verbose)
-			pr_err("ddf: Cannot open %s: %s\n",
-			       dev, strerror(errno));
-		return 0;
-	}
-	if (!get_dev_size(fd, dev, &ldsize)) {
-		close(fd);
-		return 0;
-	}
-	close(fd);
-	if (freesize) {
-		*freesize = avail_size_ddf(st, ldsize >> 9, INVALID_SECTORS);
-		if (*freesize == 0)
-			return 0;
-	}
-
-	return 1;
-}
-
 static int validate_geometry_ddf_bvd(struct supertype *st,
 				     int level, int layout, int raiddisks,
 				     int *chunk, unsigned long long size,
@@ -3498,7 +3419,7 @@ static int validate_geometry_ddf_bvd(struct supertype *st,
 	struct dl *dl;
 	unsigned long long maxsize;
 	/* ddf/bvd supports lots of things, but not containers */
-	if (level == LEVEL_CONTAINER) {
+	if (is_container(level)) {
 		if (verbose)
 			pr_err("DDF cannot create a container within an container\n");
 		return 0;
@@ -5125,13 +5046,16 @@ static struct mdinfo *ddf_activate_spare(struct active_array *a,
 	 */
 	vc = find_vdcr(ddf, a->info.container_member, rv->disk.raid_disk,
 		       &n_bvd, &vcl);
-	if (vc == NULL)
+	if (vc == NULL) {
+		free(rv);
 		return NULL;
+	}
 
 	mu = xmalloc(sizeof(*mu));
 	if (posix_memalign(&mu->space, 512, sizeof(struct vcl)) != 0) {
 		free(mu);
-		mu = NULL;
+		free(rv);
+		return NULL;
 	}
 
 	mu->len = ddf->conf_rec_len * 512 * vcl->conf.sec_elmnt_count;
@@ -5161,6 +5085,8 @@ static struct mdinfo *ddf_activate_spare(struct active_array *a,
 			pr_err("BUG: can't find disk %d (%d/%d)\n",
 			       di->disk.raid_disk,
 			       di->disk.major, di->disk.minor);
+			free(mu);
+			free(rv);
 			return NULL;
 		}
 		vc->phys_refnum[i_prim] = ddf->phys->entries[dl->pdnum].refnum;
@@ -5216,7 +5142,6 @@ struct superswitch super_ddf = {
 	.match_home	= match_home_ddf,
 	.uuid_from_super= uuid_from_super_ddf,
 	.getinfo_super  = getinfo_super_ddf,
-	.update_super	= update_super_ddf,
 
 	.avail_size	= avail_size_ddf,
 

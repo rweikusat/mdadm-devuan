@@ -26,7 +26,6 @@
 #include	"md_p.h"
 #include	"md_u.h"
 #include	<sys/wait.h>
-#include	<signal.h>
 #include	<limits.h>
 #include	<syslog.h>
 #ifndef NO_LIBUDEV
@@ -34,8 +33,8 @@
 #endif
 
 struct state {
-	char *devname;
-	char devnm[32];	/* to sync with mdstat info */
+	char devname[MD_NAME_MAX + sizeof("/dev/md/")];	/* length of "/dev/md/" + device name + terminating byte*/
+	char devnm[MD_NAME_MAX];	/* to sync with mdstat info */
 	unsigned int utime;
 	int err;
 	char *spare_group;
@@ -46,9 +45,9 @@ struct state {
 	int devstate[MAX_DISKS];
 	dev_t devid[MAX_DISKS];
 	int percent;
-	char parent_devnm[32]; /* For subarray, devnm of parent.
-				* For others, ""
-				*/
+	char parent_devnm[MD_NAME_MAX]; /* For subarray, devnm of parent.
+					* For others, ""
+					*/
 	struct supertype *metadata;
 	struct state *subarray;/* for a container it is a link to first subarray
 				* for a subarray it is a link to next subarray
@@ -67,7 +66,7 @@ struct alert_info {
 static int make_daemon(char *pidfile);
 static int check_one_sharer(int scan);
 static void write_autorebuild_pid(void);
-static void alert(char *event, char *dev, char *disc, struct alert_info *info);
+static void alert(const char *event, const char *dev, const char *disc, struct alert_info *info);
 static int check_array(struct state *st, struct mdstat_ent *mdstat,
 		       int test, struct alert_info *info,
 		       int increments, char *prefer);
@@ -75,6 +74,7 @@ static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist,
 			  int test, struct alert_info *info);
 static void try_spare_migration(struct state *statelist, struct alert_info *info);
 static void link_containers_with_subarrays(struct state *list);
+static void free_statelist(struct state *statelist);
 #ifndef NO_LIBUDEV
 static int check_udev_activity(void);
 #endif
@@ -123,13 +123,12 @@ int Monitor(struct mddev_dev *devlist,
 	 *  and if we can get_disk_info and find a name
 	 *  Then we hot-remove and hot-add to the other array
 	 *
-	 * If devlist is NULL, then we can monitor everything because --scan
+	 * If devlist is NULL, then we can monitor everything if --scan
 	 * was given.  We get an initial list from config file and add anything
 	 * that appears in /proc/mdstat
 	 */
 
 	struct state *statelist = NULL;
-	struct state *st2;
 	int finished = 0;
 	struct mdstat_ent *mdstat = NULL;
 	char *mailfrom;
@@ -137,24 +136,32 @@ int Monitor(struct mddev_dev *devlist,
 	struct mddev_ident *mdlist;
 	int delay_for_event = c->delay;
 
-	if (!mailaddr) {
-		mailaddr = conf_get_mailaddr();
-		if (mailaddr && ! c->scan)
-			pr_err("Monitor using email address \"%s\" from config file\n",
-			       mailaddr);
+	if (devlist && c->scan) {
+		pr_err("Devices list and --scan option cannot be combined - not monitoring.\n");
+		return 1;
 	}
+
+	if (!mailaddr)
+		mailaddr = conf_get_mailaddr();
+
+	if (!alert_cmd)
+		alert_cmd = conf_get_program();
+
 	mailfrom = conf_get_mailfrom();
 
-	if (!alert_cmd) {
-		alert_cmd = conf_get_program();
-		if (alert_cmd && !c->scan)
-			pr_err("Monitor using program \"%s\" from config file\n",
-			       alert_cmd);
-	}
 	if (c->scan && !mailaddr && !alert_cmd && !dosyslog) {
 		pr_err("No mail address or alert command - not monitoring.\n");
 		return 1;
 	}
+
+	if (c->verbose) {
+		pr_err("Monitor is started with delay %ds\n", c->delay);
+		if (mailaddr)
+			pr_err("Monitor using email address %s\n", mailaddr);
+		if (alert_cmd)
+			pr_err("Monitor using program %s\n", alert_cmd);
+	}
+
 	info.alert_cmd = alert_cmd;
 	info.mailaddr = mailaddr;
 	info.mailfrom = mailfrom;
@@ -183,14 +190,12 @@ int Monitor(struct mddev_dev *devlist,
 				continue;
 			if (strcasecmp(mdlist->devname, "<ignore>") == 0)
 				continue;
+			if (!is_mddev(mdlist->devname))
+				continue;
+
 			st = xcalloc(1, sizeof *st);
-			if (mdlist->devname[0] == '/')
-				st->devname = xstrdup(mdlist->devname);
-			else {
-				st->devname = xmalloc(8+strlen(mdlist->devname)+1);
-				strcpy(strcpy(st->devname, "/dev/md/"),
-				       mdlist->devname);
-			}
+			snprintf(st->devname, MD_NAME_MAX + sizeof("/dev/md/"),
+				 "/dev/md/%s", basename(mdlist->devname));
 			st->next = statelist;
 			st->devnm[0] = 0;
 			st->percent = RESYNC_UNKNOWN;
@@ -204,9 +209,14 @@ int Monitor(struct mddev_dev *devlist,
 		struct mddev_dev *dv;
 
 		for (dv = devlist; dv; dv = dv->next) {
-			struct state *st = xcalloc(1, sizeof *st);
+			struct state *st;
+
+			if (!is_mddev(dv->devname))
+				continue;
+
+			st = xcalloc(1, sizeof *st);
 			mdlist = conf_get_ident(dv->devname);
-			st->devname = xstrdup(dv->devname);
+			snprintf(st->devname, MD_NAME_MAX + sizeof("/dev/md/"), "%s", dv->devname);
 			st->next = statelist;
 			st->devnm[0] = 0;
 			st->percent = RESYNC_UNKNOWN;
@@ -289,17 +299,16 @@ int Monitor(struct mddev_dev *devlist,
 		for (stp = &statelist; (st = *stp) != NULL; ) {
 			if (st->from_auto && st->err > 5) {
 				*stp = st->next;
-				free(st->devname);
-				free(st->spare_group);
+				if (st->spare_group)
+					free(st->spare_group);
+
 				free(st);
 			} else
 				stp = &st->next;
 		}
 	}
-	for (st2 = statelist; st2; st2 = statelist) {
-		statelist = st2->next;
-		free(st2);
-	}
+
+	free_statelist(statelist);
 
 	if (pidfile)
 		unlink(pidfile);
@@ -403,109 +412,115 @@ static void write_autorebuild_pid()
 	}
 }
 
-static void alert(char *event, char *dev, char *disc, struct alert_info *info)
+static void execute_alert_cmd(const char *event, const char *dev, const char *disc, struct alert_info *info)
+{
+	int pid = fork();
+
+	switch (pid) {
+	default:
+		waitpid(pid, NULL, 0);
+		break;
+	case -1:
+		pr_err("Cannot fork to execute alert command");
+		break;
+	case 0:
+		execl(info->alert_cmd, info->alert_cmd, event, dev, disc, NULL);
+		exit(2);
+	}
+}
+
+static void send_event_email(const char *event, const char *dev, const char *disc, struct alert_info *info)
+{
+	FILE *mp, *mdstat;
+	char hname[256];
+	char buf[BUFSIZ];
+	int n;
+
+	mp = popen(Sendmail, "w");
+	if (!mp) {
+		pr_err("Cannot open pipe stream for sendmail.\n");
+		return;
+	}
+
+	gethostname(hname, sizeof(hname));
+	signal(SIGPIPE, SIG_IGN);
+	if (info->mailfrom)
+		fprintf(mp, "From: %s\n", info->mailfrom);
+	else
+		fprintf(mp, "From: %s monitoring <root>\n", Name);
+	fprintf(mp, "To: %s\n", info->mailaddr);
+	fprintf(mp, "Subject: %s event on %s:%s\n\n", event, dev, hname);
+	fprintf(mp, "This is an automatically generated mail message. \n");
+	fprintf(mp, "A %s event had been detected on md device %s.\n\n", event, dev);
+
+	if (disc && disc[0] != ' ')
+		fprintf(mp,
+			"It could be related to component device %s.\n\n", disc);
+	if (disc && disc[0] == ' ')
+		fprintf(mp, "Extra information:%s.\n\n", disc);
+
+	mdstat = fopen("/proc/mdstat", "r");
+	if (!mdstat) {
+		pr_err("Cannot open /proc/mdstat\n");
+		pclose(mp);
+		return;
+	}
+
+	fprintf(mp, "The /proc/mdstat file currently contains the following:\n\n");
+	while ((n = fread(buf, 1, sizeof(buf), mdstat)) > 0)
+		n = fwrite(buf, 1, n, mp);
+	fclose(mdstat);
+	pclose(mp);
+}
+
+static void log_event_to_syslog(const char *event, const char *dev, const char *disc)
 {
 	int priority;
+	/* Log at a different severity depending on the event.
+	 *
+	 * These are the critical events:  */
+	if (strncmp(event, "Fail", 4) == 0 ||
+		strncmp(event, "Degrade", 7) == 0 ||
+		strncmp(event, "DeviceDisappeared", 17) == 0)
+		priority = LOG_CRIT;
+	/* Good to know about, but are not failures: */
+	else if (strncmp(event, "Rebuild", 7) == 0 ||
+			strncmp(event, "MoveSpare", 9) == 0 ||
+			strncmp(event, "Spares", 6) != 0)
+		priority = LOG_WARNING;
+	/* Everything else: */
+	else
+		priority = LOG_INFO;
 
+	if (disc && disc[0] != ' ')
+		syslog(priority,
+			"%s event detected on md device %s, component device %s", event, dev, disc);
+	else if (disc)
+		syslog(priority, "%s event detected on md device %s: %s", event, dev, disc);
+	else
+		syslog(priority, "%s event detected on md device %s", event, dev);
+}
+
+static void alert(const char *event, const char *dev, const char *disc, struct alert_info *info)
+{
 	if (!info->alert_cmd && !info->mailaddr && !info->dosyslog) {
 		time_t now = time(0);
 
 		printf("%1.15s: %s on %s %s\n", ctime(&now) + 4,
 		       event, dev, disc?disc:"unknown device");
 	}
-	if (info->alert_cmd) {
-		int pid = fork();
-		switch(pid) {
-		default:
-			waitpid(pid, NULL, 0);
-			break;
-		case -1:
-			break;
-		case 0:
-			execl(info->alert_cmd, info->alert_cmd,
-			      event, dev, disc, NULL);
-			exit(2);
-		}
-	}
+	if (info->alert_cmd)
+		execute_alert_cmd(event, dev, disc, info);
+
 	if (info->mailaddr && (strncmp(event, "Fail", 4) == 0 ||
 			       strncmp(event, "Test", 4) == 0 ||
 			       strncmp(event, "Spares", 6) == 0 ||
 			       strncmp(event, "Degrade", 7) == 0)) {
-		FILE *mp = popen(Sendmail, "w");
-		if (mp) {
-			FILE *mdstat;
-			char hname[256];
-			gethostname(hname, sizeof(hname));
-			signal(SIGPIPE, SIG_IGN);
-			if (info->mailfrom)
-				fprintf(mp, "From: %s\n", info->mailfrom);
-			else
-				fprintf(mp, "From: %s monitoring <root>\n",
-					Name);
-			fprintf(mp, "To: %s\n", info->mailaddr);
-			fprintf(mp, "Subject: %s event on %s:%s\n\n",
-				event, dev, hname);
-
-			fprintf(mp,
-				"This is an automatically generated mail message from %s\n", Name);
-			fprintf(mp, "running on %s\n\n", hname);
-
-			fprintf(mp,
-				"A %s event had been detected on md device %s.\n\n", event, dev);
-
-			if (disc && disc[0] != ' ')
-				fprintf(mp,
-					"It could be related to component device %s.\n\n", disc);
-			if (disc && disc[0] == ' ')
-				fprintf(mp, "Extra information:%s.\n\n", disc);
-
-			fprintf(mp, "Faithfully yours, etc.\n");
-
-			mdstat = fopen("/proc/mdstat", "r");
-			if (mdstat) {
-				char buf[8192];
-				int n;
-				fprintf(mp,
-					"\nP.S. The /proc/mdstat file currently contains the following:\n\n");
-				while ((n = fread(buf, 1, sizeof(buf),
-						  mdstat)) > 0)
-					n = fwrite(buf, 1, n, mp);
-				fclose(mdstat);
-			}
-			pclose(mp);
-		}
+		send_event_email(event, dev, disc, info);
 	}
 
-	/* log the event to syslog maybe */
-	if (info->dosyslog) {
-		/* Log at a different severity depending on the event.
-		 *
-		 * These are the critical events:  */
-		if (strncmp(event, "Fail", 4) == 0 ||
-		    strncmp(event, "Degrade", 7) == 0 ||
-		    strncmp(event, "DeviceDisappeared", 17) == 0)
-			priority = LOG_CRIT;
-		/* Good to know about, but are not failures: */
-		else if (strncmp(event, "Rebuild", 7) == 0 ||
-			 strncmp(event, "MoveSpare", 9) == 0 ||
-			 strncmp(event, "Spares", 6) != 0)
-			priority = LOG_WARNING;
-		/* Everything else: */
-		else
-			priority = LOG_INFO;
-
-		if (disc && disc[0] != ' ')
-			syslog(priority,
-			       "%s event detected on md device %s, component device %s", event, dev, disc);
-		else if (disc)
-			syslog(priority,
-			       "%s event detected on md device %s: %s",
-			       event, dev, disc);
-		else
-			syslog(priority,
-			       "%s event detected on md device %s",
-			       event, dev);
-	}
+	if (info->dosyslog)
+		log_event_to_syslog(event, dev, disc);
 }
 
 static int check_array(struct state *st, struct mdstat_ent *mdstat,
@@ -540,7 +555,7 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 		goto disappeared;
 
 	if (st->devnm[0] == 0)
-		strcpy(st->devnm, fd2devnm(fd));
+		snprintf(st->devnm, MD_NAME_MAX, "%s", fd2devnm(fd));
 
 	for (mse2 = mdstat; mse2; mse2 = mse2->next)
 		if (strcmp(mse2->devnm, st->devnm) == 0) {
@@ -670,7 +685,7 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 	    strncmp(mse->metadata_version, "external:", 9) == 0 &&
 	    is_subarray(mse->metadata_version+9)) {
 		char *sl;
-		strcpy(st->parent_devnm, mse->metadata_version + 10);
+		snprintf(st->parent_devnm, MD_NAME_MAX, "%s", mse->metadata_version + 10);
 		sl = strchr(st->parent_devnm, '/');
 		if (sl)
 			*sl = 0;
@@ -758,14 +773,13 @@ static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist,
 				continue;
 			}
 
-			st->devname = xstrdup(name);
+			snprintf(st->devname, MD_NAME_MAX + sizeof("/dev/md/"), "%s", name);
 			if ((fd = open(st->devname, O_RDONLY)) < 0 ||
 			    md_get_array_info(fd, &array) < 0) {
 				/* no such array */
 				if (fd >= 0)
 					close(fd);
 				put_md_name(st->devname);
-				free(st->devname);
 				if (st->metadata) {
 					st->metadata->ss->free_super(st->metadata);
 					free(st->metadata);
@@ -777,7 +791,7 @@ static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist,
 			st->next = *statelist;
 			st->err = 1;
 			st->from_auto = 1;
-			strcpy(st->devnm, mse->devnm);
+			snprintf(st->devnm, MD_NAME_MAX, "%s", mse->devnm);
 			st->percent = RESYNC_UNKNOWN;
 			st->expected_spares = -1;
 			if (mse->metadata_version &&
@@ -785,8 +799,8 @@ static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist,
 				    "external:", 9) == 0 &&
 			    is_subarray(mse->metadata_version+9)) {
 				char *sl;
-				strcpy(st->parent_devnm,
-					mse->metadata_version+10);
+				snprintf(st->parent_devnm, MD_NAME_MAX,
+					 "%s", mse->metadata_version + 10);
 				sl = strchr(st->parent_devnm, '/');
 				*sl = 0;
 			} else
@@ -1049,6 +1063,24 @@ static void link_containers_with_subarrays(struct state *list)
 					cont->subarray = st;
 					break;
 				}
+}
+
+/**
+ * free_statelist() - Frees statelist.
+ * @statelist: statelist to free
+ */
+static void free_statelist(struct state *statelist)
+{
+	struct state *tmp = NULL;
+
+	while (statelist) {
+		if (statelist->spare_group)
+			free(statelist->spare_group);
+
+		tmp = statelist;
+		statelist = statelist->next;
+		free(tmp);
+	}
 }
 
 #ifndef NO_LIBUDEV

@@ -288,7 +288,7 @@ static void export_examine_super0(struct supertype *st)
 {
 	mdp_super_t *sb = st->sb;
 
-	printf("MD_LEVEL=%s\n", map_num(pers, sb->level));
+	printf("MD_LEVEL=%s\n", map_num_s(pers, sb->level));
 	printf("MD_DEVICES=%d\n", sb->raid_disks);
 	if (sb->minor_version >= 90)
 		printf("MD_UUID=%08x:%08x:%08x:%08x\n",
@@ -491,7 +491,7 @@ static struct mdinfo *container_content0(struct supertype *st, char *subarray)
 }
 
 static int update_super0(struct supertype *st, struct mdinfo *info,
-			 char *update,
+			 enum update_opt update,
 			 char *devname, int verbose,
 			 int uuid_set, char *homehost)
 {
@@ -503,18 +503,37 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 	int uuid[4];
 	mdp_super_t *sb = st->sb;
 
-	if (strcmp(update, "homehost") == 0 &&
-	    homehost) {
-		/* note that 'homehost' is special as it is really
+	if (update == UOPT_HOMEHOST && homehost) {
+		/*
+		 * note that 'homehost' is special as it is really
 		 * a "uuid" update.
 		 */
 		uuid_set = 0;
-		update = "uuid";
+		update = UOPT_UUID;
 		info->uuid[0] = sb->set_uuid0;
 		info->uuid[1] = sb->set_uuid1;
 	}
 
-	if (strcmp(update, "sparc2.2")==0 ) {
+	switch (update) {
+	case UOPT_UUID:
+		if (!uuid_set && homehost) {
+			char buf[20];
+			memcpy(info->uuid+2,
+			       sha1_buffer(homehost, strlen(homehost), buf),
+			       8);
+		}
+		sb->set_uuid0 = info->uuid[0];
+		sb->set_uuid1 = info->uuid[1];
+		sb->set_uuid2 = info->uuid[2];
+		sb->set_uuid3 = info->uuid[3];
+		if (sb->state & (1<<MD_SB_BITMAP_PRESENT)) {
+			struct bitmap_super_s *bm;
+			bm = (struct bitmap_super_s *)(sb+1);
+			uuid_from_super0(st, uuid);
+			memcpy(bm->uuid, uuid, 16);
+		}
+		break;
+	case UOPT_SPARC22: {
 		/* 2.2 sparc put the events in the wrong place
 		 * So we copy the tail of the superblock
 		 * up 4 bytes before continuing
@@ -527,12 +546,15 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 		if (verbose >= 0)
 			pr_err("adjusting superblock of %s for 2.2/sparc compatibility.\n",
 			       devname);
-	} else if (strcmp(update, "super-minor") ==0) {
+		break;
+	}
+	case UOPT_SUPER_MINOR:
 		sb->md_minor = info->array.md_minor;
 		if (verbose > 0)
 			pr_err("updating superblock of %s with minor number %d\n",
 				devname, info->array.md_minor);
-	} else if (strcmp(update, "summaries") == 0) {
+		break;
+	case UOPT_SUMMARIES: {
 		unsigned int i;
 		/* set nr_disks, active_disks, working_disks,
 		 * failed_disks, spare_disks based on disks[]
@@ -559,7 +581,9 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 					sb->spare_disks++;
 			} else if (i >= sb->raid_disks && sb->disks[i].number == 0)
 				sb->disks[i].state = 0;
-	} else if (strcmp(update, "force-one")==0) {
+		break;
+	}
+	case UOPT_SPEC_FORCE_ONE: {
 		/* Not enough devices for a working array, so
 		 * bring this one up-to-date.
 		 */
@@ -569,7 +593,9 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 		if (sb->events_hi != ehi ||
 		    sb->events_lo != elo)
 			rv = 1;
-	} else if (strcmp(update, "force-array")==0) {
+		break;
+	}
+	case UOPT_SPEC_FORCE_ARRAY:
 		/* degraded array and 'force' requested, so
 		 * maybe need to mark it 'clean'
 		 */
@@ -579,7 +605,8 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 			sb->state |= (1 << MD_SB_CLEAN);
 			rv = 1;
 		}
-	} else if (strcmp(update, "assemble")==0) {
+		break;
+	case UOPT_SPEC_ASSEMBLE: {
 		int d = info->disk.number;
 		int wonly = sb->disks[d].state & (1<<MD_DISK_WRITEMOSTLY);
 		int failfast = sb->disks[d].state & (1<<MD_DISK_FAILFAST);
@@ -609,7 +636,9 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 			sb->reshape_position = info->reshape_progress;
 			rv = 1;
 		}
-	} else if (strcmp(update, "linear-grow-new") == 0) {
+		break;
+	}
+	case UOPT_SPEC_LINEAR_GROW_NEW:
 		memset(&sb->disks[info->disk.number], 0, sizeof(sb->disks[0]));
 		sb->disks[info->disk.number].number = info->disk.number;
 		sb->disks[info->disk.number].major = info->disk.major;
@@ -617,7 +646,8 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 		sb->disks[info->disk.number].raid_disk = info->disk.raid_disk;
 		sb->disks[info->disk.number].state = info->disk.state;
 		sb->this_disk = sb->disks[info->disk.number];
-	} else if (strcmp(update, "linear-grow-update") == 0) {
+		break;
+	case UOPT_SPEC_LINEAR_GROW_UPDATE:
 		sb->raid_disks = info->array.raid_disks;
 		sb->nr_disks = info->array.nr_disks;
 		sb->active_disks = info->array.active_disks;
@@ -628,29 +658,15 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 		sb->disks[info->disk.number].minor = info->disk.minor;
 		sb->disks[info->disk.number].raid_disk = info->disk.raid_disk;
 		sb->disks[info->disk.number].state = info->disk.state;
-	} else if (strcmp(update, "resync") == 0) {
-		/* make sure resync happens */
+		break;
+	case UOPT_RESYNC:
+		/*
+		 * make sure resync happens
+		 */
 		sb->state &= ~(1<<MD_SB_CLEAN);
 		sb->recovery_cp = 0;
-	} else if (strcmp(update, "uuid") == 0) {
-		if (!uuid_set && homehost) {
-			char buf[20];
-			char *hash = sha1_buffer(homehost,
-						 strlen(homehost),
-						 buf);
-			memcpy(info->uuid+2, hash, 8);
-		}
-		sb->set_uuid0 = info->uuid[0];
-		sb->set_uuid1 = info->uuid[1];
-		sb->set_uuid2 = info->uuid[2];
-		sb->set_uuid3 = info->uuid[3];
-		if (sb->state & (1<<MD_SB_BITMAP_PRESENT)) {
-			struct bitmap_super_s *bm;
-			bm = (struct bitmap_super_s*)(sb+1);
-			uuid_from_super0(st, uuid);
-			memcpy(bm->uuid, uuid, 16);
-		}
-	} else if (strcmp(update, "metadata") == 0) {
+		break;
+	case UOPT_METADATA:
 		/* Create some v1.0 metadata to match ours but make the
 		 * ctime bigger.  Also update info->array.*_version.
 		 * We need to arrange that store_super writes out
@@ -670,7 +686,8 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 			uuid_from_super0(st, info->uuid);
 			st->other = super1_make_v0(st, info, st->sb);
 		}
-	} else if (strcmp(update, "revert-reshape") == 0) {
+		break;
+	case UOPT_REVERT_RESHAPE:
 		rv = -2;
 		if (sb->minor_version <= 90)
 			pr_err("No active reshape to revert on %s\n",
@@ -683,7 +700,7 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 			int parity = sb->level == 6 ? 2 : 1;
 			rv = 0;
 
-			if (sb->level >= 4 && sb->level <= 6 &&
+			if (is_level456(sb->level) &&
 			    sb->reshape_position % (
 				    sb->new_chunk/512 *
 				    (sb->raid_disks - sb->delta_disks - parity))) {
@@ -702,16 +719,22 @@ static int update_super0(struct supertype *st, struct mdinfo *info,
 			sb->new_chunk = sb->chunk_size;
 			sb->chunk_size = tmp;
 		}
-	} else if (strcmp(update, "no-bitmap") == 0) {
+		break;
+	case UOPT_NO_BITMAP:
 		sb->state &= ~(1<<MD_SB_BITMAP_PRESENT);
-	} else if (strcmp(update, "_reshape_progress")==0)
+		break;
+	case UOPT_SPEC__RESHAPE_PROGRESS:
 		sb->reshape_position = info->reshape_progress;
-	else if (strcmp(update, "writemostly")==0)
+		break;
+	case UOPT_SPEC_WRITEMOSTLY:
 		sb->state |= (1<<MD_DISK_WRITEMOSTLY);
-	else if (strcmp(update, "readwrite")==0)
+		break;
+	case UOPT_SPEC_READWRITE:
 		sb->state &= ~(1<<MD_DISK_WRITEMOSTLY);
-	else
+		break;
+	default:
 		rv = -1;
+	}
 
 	sb->sb_csum = calc_sb0_csum(sb);
 	return rv;
@@ -1273,7 +1296,7 @@ static int validate_geometry0(struct supertype *st, int level,
 	if (get_linux_version() < 3001000)
 		tbmax = 2;
 
-	if (level == LEVEL_CONTAINER) {
+	if (is_container(level)) {
 		if (verbose)
 			pr_err("0.90 metadata does not support containers\n");
 		return 0;

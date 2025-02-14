@@ -33,8 +33,10 @@ extern __off64_t lseek64 __P ((int __fd, __off64_t __offset, int __whence));
 # endif
 #endif
 
+#include	<assert.h>
 #include	<sys/types.h>
 #include	<sys/stat.h>
+#include	<stdarg.h>
 #include	<stdint.h>
 #include	<stdlib.h>
 #include	<time.h>
@@ -46,6 +48,7 @@ extern __off64_t lseek64 __P ((int __fd, __off64_t __offset, int __whence));
 #include	<string.h>
 #include	<syslog.h>
 #include	<stdbool.h>
+#include	<signal.h>
 /* Newer glibc requires sys/sysmacros.h directly for makedev() */
 #include	<sys/sysmacros.h>
 #ifdef __dietlibc__
@@ -393,7 +396,6 @@ struct createinfo {
 	int	gid;
 	int	autof;
 	int	mode;
-	int	symlinks;
 	int	names;
 	int	bblist;
 	struct supertype *supertype;
@@ -418,6 +420,7 @@ enum mode {
 };
 
 extern char short_options[];
+extern char short_monitor_options[];
 extern char short_bitmap_options[];
 extern char short_bitmap_auto_options[];
 extern struct option long_options[];
@@ -440,7 +443,6 @@ enum special_options {
 	BackupFile,
 	HomeHost,
 	AutoHomeHost,
-	Symlinks,
 	AutoDetect,
 	Waitclean,
 	DetailPlatform,
@@ -494,6 +496,51 @@ enum special_options {
 	WriteJournal,
 	ConsistencyPolicy,
 };
+
+enum update_opt {
+	UOPT_NAME = 1,
+	UOPT_PPL,
+	UOPT_NO_PPL,
+	UOPT_BITMAP,
+	UOPT_NO_BITMAP,
+	UOPT_SUBARRAY_ONLY,
+	UOPT_SPARC22,
+	UOPT_SUPER_MINOR,
+	UOPT_SUMMARIES,
+	UOPT_RESYNC,
+	UOPT_UUID,
+	UOPT_HOMEHOST,
+	UOPT_HOME_CLUSTER,
+	UOPT_NODES,
+	UOPT_DEVICESIZE,
+	UOPT_BBL,
+	UOPT_NO_BBL,
+	UOPT_FORCE_NO_BBL,
+	UOPT_METADATA,
+	UOPT_REVERT_RESHAPE,
+	UOPT_LAYOUT_ORIGINAL,
+	UOPT_LAYOUT_ALTERNATE,
+	UOPT_LAYOUT_UNSPECIFIED,
+	UOPT_BYTEORDER,
+	UOPT_HELP,
+	UOPT_USER_ONLY,
+	/*
+	 * Code specific options, cannot be set by the user
+	 */
+	UOPT_SPEC_FORCE_ONE,
+	UOPT_SPEC_FORCE_ARRAY,
+	UOPT_SPEC_ASSEMBLE,
+	UOPT_SPEC_LINEAR_GROW_NEW,
+	UOPT_SPEC_LINEAR_GROW_UPDATE,
+	UOPT_SPEC__RESHAPE_PROGRESS,
+	UOPT_SPEC_WRITEMOSTLY,
+	UOPT_SPEC_READWRITE,
+	UOPT_SPEC_FAILFAST,
+	UOPT_SPEC_NOFAILFAST,
+	UOPT_SPEC_REVERT_RESHAPE_NOBACKUP,
+	UOPT_UNDEFINED
+};
+extern void fprint_update_options(FILE *outf, enum update_opt update_mode);
 
 enum prefix_standard {
 	JEDEC,
@@ -569,7 +616,7 @@ struct context {
 	int	export;
 	int	test;
 	char	*subarray;
-	char	*update;
+	enum	update_opt update;
 	int	scan;
 	int	SparcAdjust;
 	int	autof;
@@ -595,6 +642,7 @@ struct shape {
 	int	assume_clean;
 	int	write_behind;
 	unsigned long long size;
+	unsigned long long data_offset;
 	int	consistency_policy;
 };
 
@@ -769,12 +817,12 @@ extern int restore_stripes(int *dest, unsigned long long *offsets,
 #endif
 
 #define SYSLOG_FACILITY LOG_DAEMON
-
+extern char *map_num_s(mapping_t *map, int num);
 extern char *map_num(mapping_t *map, int num);
 extern int map_name(mapping_t *map, char *name);
 extern mapping_t r0layout[], r5layout[], r6layout[],
 	pers[], modes[], faultylayout[];
-extern mapping_t consistency_policies[], sysfs_array_states[];
+extern mapping_t consistency_policies[], sysfs_array_states[], update_options[];
 
 extern char *map_dev_preferred(int major, int minor, int create,
 			       char *prefer);
@@ -793,6 +841,17 @@ static inline char *map_dev(int major, int minor, int create)
 static inline int is_fd_valid(int fd)
 {
 	return (fd > -1);
+}
+
+/**
+ * is_level456() - check whether given level is between inclusive 4 and 6.
+ * @level: level to check.
+ *
+ * Return: true if condition is met, false otherwise
+ */
+static inline bool is_level456(int level)
+{
+	return (level >= 4 && level <= 6);
 }
 
 /**
@@ -952,7 +1011,7 @@ extern struct superswitch {
 	 *                    it will resume going in the opposite direction.
 	 */
 	int (*update_super)(struct supertype *st, struct mdinfo *info,
-			    char *update,
+			    enum update_opt update,
 			    char *devname, int verbose,
 			    int uuid_set, char *homehost);
 
@@ -1078,9 +1137,15 @@ extern struct superswitch {
 	/* Permit subarray's to be deleted from inactive containers */
 	int (*kill_subarray)(struct supertype *st,
 			     char *subarray_id); /* optional */
-	/* Permit subarray's to be modified */
+	/**
+	 * update_subarray() - Permit subarray to be modified.
+	 * @st: Supertype.
+	 * @subarray: Subarray name.
+	 * @update: Update option.
+	 * @ident: Optional identifiers.
+	 */
 	int (*update_subarray)(struct supertype *st, char *subarray,
-			       char *update, struct mddev_ident *ident); /* optional */
+			       enum update_opt update, struct mddev_ident *ident);
 	/* Check if reshape is supported for this external format.
 	 * st is obtained from super_by_fd() where st->subarray[0] is
 	 * initialized to indicate if reshape is being performed at the
@@ -1413,14 +1478,13 @@ extern int Manage_stop(char *devname, int fd, int quiet,
 		       int will_retry);
 extern int Manage_subdevs(char *devname, int fd,
 			  struct mddev_dev *devlist, int verbose, int test,
-			  char *update, int force);
+			  enum update_opt update, int force);
 extern int autodetect(void);
 extern int Grow_Add_device(char *devname, int fd, char *newdev);
 extern int Grow_addbitmap(char *devname, int fd,
 			  struct context *c, struct shape *s);
 extern int Grow_reshape(char *devname, int fd,
 			struct mddev_dev *devlist,
-			unsigned long long data_offset,
 			struct context *c, struct shape *s);
 extern int Grow_restart(struct supertype *st, struct mdinfo *info,
 			int *fdlist, int cnt, char *backup_file, int verbose);
@@ -1451,8 +1515,7 @@ extern int Create(struct supertype *st, char *mddev,
 		  char *name, int *uuid,
 		  int subdevs, struct mddev_dev *devlist,
 		  struct shape *s,
-		  struct context *c,
-		  unsigned long long data_offset);
+		  struct context *c);
 
 extern int Detail(char *dev, struct context *c);
 extern int Detail_Platform(struct superswitch *ss, int scan, int verbose, int export, char *controller_path);
@@ -1469,7 +1532,7 @@ extern int Monitor(struct mddev_dev *devlist,
 
 extern int Kill(char *dev, struct supertype *st, int force, int verbose, int noexcl);
 extern int Kill_subarray(char *dev, char *subarray, int verbose);
-extern int Update_subarray(char *dev, char *subarray, char *update, struct mddev_ident *ident, int quiet);
+extern int Update_subarray(char *dev, char *subarray, enum update_opt update, struct mddev_ident *ident, int quiet);
 extern int Wait(char *dev);
 extern int WaitClean(char *dev, int verbose);
 extern int SetAction(char *dev, char *action);
@@ -1511,6 +1574,7 @@ extern int get_linux_version(void);
 extern int mdadm_version(char *version);
 extern unsigned long long parse_size(char *size);
 extern int parse_uuid(char *str, int uuid[4]);
+int default_layout(struct supertype *st, int level, int verbose);
 extern int is_near_layout_10(int layout);
 extern int parse_layout_10(char *layout);
 extern int parse_layout_faulty(char *layout);
@@ -1528,6 +1592,7 @@ extern int stat_is_blkdev(char *devname, dev_t *rdev);
 extern bool is_dev_alive(char *path);
 extern int get_mdp_major(void);
 extern int get_maj_min(char *dev, int *major, int *minor);
+extern bool is_bit_set(int *val, unsigned char index);
 extern int dev_open(char *dev, int flags);
 extern int open_dev(char *devnm);
 extern void reopen_mddev(int mdfd);
@@ -1539,6 +1604,8 @@ extern int compare_paths (char* path1,char* path2);
 extern void enable_fds(int devices);
 extern void manage_fork_fds(int close_all);
 extern int continue_via_systemd(char *devnm, char *service_name);
+
+extern void ident_init(struct mddev_ident *ident);
 
 extern int parse_auto(char *str, char *msg, int config);
 extern struct mddev_ident *conf_get_ident(char *dev);
@@ -1634,6 +1701,7 @@ extern int create_mddev(char *dev, char *name, int autof, int trustworthy,
 #define	FOREIGN	2
 #define	METADATA 3
 extern int open_mddev(char *dev, int report_errors);
+extern int is_mddev(char *dev);
 extern int open_container(int fd);
 extern int metadata_container_matches(char *metadata, char *devnm);
 extern int metadata_subdev_matches(char *metadata, char *devnm);
@@ -1660,6 +1728,7 @@ void *super1_make_v0(struct supertype *st, struct mdinfo *info, mdp_super_t *sb0
 extern char *stat2kname(struct stat *st);
 extern char *fd2kname(int fd);
 extern char *stat2devnm(struct stat *st);
+bool stat_is_md_dev(struct stat *st);
 extern char *fd2devnm(int fd);
 extern void udev_block(char *devnm);
 extern void udev_unblock(void);
@@ -1705,6 +1774,10 @@ extern int cluster_get_dlmlock(void);
 extern int cluster_release_dlmlock(void);
 extern void set_dlm_hooks(void);
 
+#define MSEC_TO_NSEC(msec) ((msec) * 1000000)
+#define USEC_TO_NSEC(usec) ((usec) * 1000)
+extern void sleep_for(unsigned int sec, long nsec, bool wake_after_interrupt);
+
 #define _ROUND_UP(val, base)	(((val) + (base) - 1) & ~(base - 1))
 #define ROUND_UP(val, base)	_ROUND_UP(val, (typeof(val))(base))
 #define ROUND_UP_PTR(ptr, base)	((typeof(ptr)) \
@@ -1729,6 +1802,27 @@ static inline char *to_subarray(struct mdstat_ent *ent, char *container)
 	return &ent->metadata_version[10+strlen(container)+1];
 }
 
+/**
+ * signal_s() - Wrapper for sigaction() with signal()-like interface.
+ * @sig: The signal to set the signal handler to.
+ * @handler: The signal handler.
+ *
+ * Return: previous handler or SIG_ERR on failure.
+ */
+static inline sighandler_t signal_s(int sig, sighandler_t handler)
+{
+	struct sigaction new_act;
+	struct sigaction old_act;
+
+	new_act.sa_handler = handler;
+	new_act.sa_flags = 0;
+
+	if (sigaction(sig, &new_act, &old_act) == 0)
+		return old_act.sa_handler;
+
+	return SIG_ERR;
+}
+
 #ifdef DEBUG
 #define dprintf(fmt, arg...) \
 	fprintf(stderr, "%s: %s: "fmt, Name, __func__, ##arg)
@@ -1740,8 +1834,7 @@ static inline char *to_subarray(struct mdstat_ent *ent, char *container)
 #define dprintf_cont(fmt, arg...) \
         ({ if (0) fprintf(stderr, fmt, ##arg); 0; })
 #endif
-#include <assert.h>
-#include <stdarg.h>
+
 static inline int xasprintf(char **strp, const char *fmt, ...) {
 	va_list ap;
 	int ret;
@@ -1885,3 +1978,17 @@ enum r0layout {
  * This is true for native and DDF, IMSM allows 16.
  */
 #define MD_NAME_MAX 32
+
+/**
+ * is_container() - check if @level is &LEVEL_CONTAINER
+ * @level: level value
+ *
+ * return:
+ * 1 if level is equal to &LEVEL_CONTAINER, 0 otherwise.
+ */
+static inline int is_container(const int level)
+{
+	if (level == LEVEL_CONTAINER)
+		return 1;
+	return 0;
+}
