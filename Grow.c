@@ -309,7 +309,7 @@ int Grow_addbitmap(char *devname, int fd, struct context *c, struct shape *s)
 		return 1;
 	}
 	if (bmf.pathname[0]) {
-		if (strcmp(s->bitmap_file,"none") == 0) {
+		if (str_is_none(s->bitmap_file) == true) {
 			if (ioctl(fd, SET_BITMAP_FILE, -1) != 0) {
 				pr_err("failed to remove bitmap %s\n",
 					bmf.pathname);
@@ -325,7 +325,7 @@ int Grow_addbitmap(char *devname, int fd, struct context *c, struct shape *s)
 		return 1;
 	}
 	if (array.state & (1 << MD_SB_BITMAP_PRESENT)) {
-		if (strcmp(s->bitmap_file, "none")==0) {
+		if (str_is_none(s->bitmap_file) == true) {
 			array.state &= ~(1 << MD_SB_BITMAP_PRESENT);
 			if (md_set_array_info(fd, &array) != 0) {
 				if (array.state & (1 << MD_SB_CLUSTERED))
@@ -340,7 +340,7 @@ int Grow_addbitmap(char *devname, int fd, struct context *c, struct shape *s)
 		return 1;
 	}
 
-	if (strcmp(s->bitmap_file, "none") == 0) {
+	if (str_is_none(s->bitmap_file) == true) {
 		pr_err("no bitmap found on %s\n", devname);
 		return 1;
 	}
@@ -545,7 +545,7 @@ int Grow_consistency_policy(char *devname, int fd, struct context *c, struct sha
 	char *subarray = NULL;
 	int ret = 0;
 	char container_dev[PATH_MAX];
-	char buf[20];
+	char buf[SYSFS_MAX_BUF_SIZE];
 
 	if (s->consistency_policy != CONSISTENCY_POLICY_RESYNC &&
 	    s->consistency_policy != CONSISTENCY_POLICY_PPL) {
@@ -594,7 +594,7 @@ int Grow_consistency_policy(char *devname, int fd, struct context *c, struct sha
 	}
 
 	if (s->consistency_policy == CONSISTENCY_POLICY_PPL) {
-		if (sysfs_get_str(sra, NULL, "sync_action", buf, 20) <= 0) {
+		if (sysfs_get_str(sra, NULL, "sync_action", buf, sizeof(buf)) <= 0) {
 			ret = 1;
 			goto free_info;
 		} else if (strcmp(buf, "reshape\n") == 0) {
@@ -817,12 +817,12 @@ static int freeze(struct supertype *st)
 	else {
 		struct mdinfo *sra = sysfs_read(-1, st->devnm, GET_VERSION);
 		int err;
-		char buf[20];
+		char buf[SYSFS_MAX_BUF_SIZE];
 
 		if (!sra)
 			return -1;
 		/* Need to clear any 'read-auto' status */
-		if (sysfs_get_str(sra, NULL, "array_state", buf, 20) > 0 &&
+		if (sysfs_get_str(sra, NULL, "array_state", buf, sizeof(buf)) > 0 &&
 		    strncmp(buf, "read-auto", 9) == 0)
 			sysfs_set_str(sra, NULL, "array_state", "clean");
 
@@ -838,10 +838,10 @@ static void unfreeze(struct supertype *st)
 		return unfreeze_container(st);
 	else {
 		struct mdinfo *sra = sysfs_read(-1, st->devnm, GET_VERSION);
-		char buf[20];
+		char buf[SYSFS_MAX_BUF_SIZE];
 
 		if (sra &&
-		    sysfs_get_str(sra, NULL, "sync_action", buf, 20) > 0 &&
+		    sysfs_get_str(sra, NULL, "sync_action", buf, sizeof(buf)) > 0 &&
 		    strcmp(buf, "frozen\n") == 0)
 			sysfs_set_str(sra, NULL, "sync_action", "idle");
 		sysfs_free(sra);
@@ -851,12 +851,12 @@ static void unfreeze(struct supertype *st)
 static void wait_reshape(struct mdinfo *sra)
 {
 	int fd = sysfs_get_fd(sra, NULL, "sync_action");
-	char action[20];
+	char action[SYSFS_MAX_BUF_SIZE];
 
 	if (fd < 0)
 		return;
 
-	while (sysfs_fd_get_str(fd, action, 20) > 0 &&
+	while (sysfs_fd_get_str(fd, action, sizeof(action)) > 0 &&
 	       strncmp(action, "reshape", 7) == 0)
 		sysfs_wait(fd, NULL);
 	close(fd);
@@ -902,7 +902,7 @@ static int subarray_set_num(char *container, struct mdinfo *sra, char *name, int
 	 * to close a race with the array_state going clean before the
 	 * next write to raid_disks / stripe_cache_size
 	 */
-	char safe[50];
+	char safe[SYSFS_MAX_BUF_SIZE];
 	int rc;
 
 	/* only 'raid_disks' and 'stripe_cache_size' trigger md_allow_write */
@@ -1067,7 +1067,7 @@ int remove_disks_for_takeover(struct supertype *st,
 		remaining = sd->next;
 
 		sysfs_set_str(sra, sd, "state", "faulty");
-		sysfs_set_str(sra, sd, "slot", "none");
+		sysfs_set_str(sra, sd, "slot", STR_COMMON_NONE);
 		/* for external metadata disks should be removed in mdmon */
 		if (!st->ss->external)
 			sysfs_set_str(sra, sd, "state", "remove");
@@ -2145,8 +2145,7 @@ size_change_error:
 			 * a backport has been arranged.
 			 */
 			if (sra == NULL ||
-			    sysfs_set_str(sra, NULL, "resync_start",
-					  "none") < 0)
+			    sysfs_set_str(sra, NULL, "resync_start", STR_COMMON_NONE) < 0)
 				pr_err("--assume-clean not supported with --grow on this kernel\n");
 		}
 		md_get_array_info(fd, &array);
@@ -2396,11 +2395,11 @@ release:
 static int verify_reshape_position(struct mdinfo *info, int level)
 {
 	int ret_val = 0;
-	char buf[40];
+	char buf[SYSFS_MAX_BUF_SIZE];
 	int rv;
 
 	/* read sync_max, failure can mean raid0 array */
-	rv = sysfs_get_str(info, NULL, "sync_max", buf, 40);
+	rv = sysfs_get_str(info, NULL, "sync_max", buf, sizeof(buf));
 
 	if (rv > 0) {
 		char *ep;
@@ -3040,7 +3039,7 @@ static int reshape_array(char *container, int fd, char *devname,
 	unsigned long long array_size;
 	int done;
 	struct mdinfo *sra = NULL;
-	char buf[20];
+	char buf[SYSFS_MAX_BUF_SIZE];
 
 	/* when reshaping a RAID0, the component_size might be zero.
 	 * So try to fix that up.
@@ -3916,7 +3915,7 @@ int progress_reshape(struct mdinfo *info, struct reshape *reshape,
 	unsigned long long array_size = (info->component_size
 					 * reshape->before.data_disks);
 	int fd;
-	char buf[20];
+	char buf[SYSFS_MAX_BUF_SIZE];
 
 	/* First, we unsuspend any region that is now known to be safe.
 	 * If suspend_point is on the 'wrong' side of reshape_progress, then
@@ -4094,8 +4093,8 @@ int progress_reshape(struct mdinfo *info, struct reshape *reshape,
 		/* Check that sync_action is still 'reshape' to avoid
 		 * waiting forever on a dead array
 		 */
-		char action[20];
-		if (sysfs_get_str(info, NULL, "sync_action", action, 20) <= 0 ||
+		char action[SYSFS_MAX_BUF_SIZE];
+		if (sysfs_get_str(info, NULL, "sync_action", action, sizeof(action)) <= 0 ||
 		    strncmp(action, "reshape", 7) != 0)
 			break;
 		/* Some kernels reset 'sync_completed' to zero
@@ -4121,8 +4120,8 @@ int progress_reshape(struct mdinfo *info, struct reshape *reshape,
 	 */
 	if (completed == 0) {
 		unsigned long long reshapep;
-		char action[20];
-		if (sysfs_get_str(info, NULL, "sync_action", action, 20) > 0 &&
+		char action[SYSFS_MAX_BUF_SIZE];
+		if (sysfs_get_str(info, NULL, "sync_action", action, sizeof(action)) > 0 &&
 		    strncmp(action, "idle", 4) == 0 &&
 		    sysfs_get_ll(info, NULL,
 				 "reshape_position", &reshapep) == 0)
@@ -4159,8 +4158,8 @@ check_progress:
 	 * it was just a device failure that leaves us degraded but
 	 * functioning.
 	 */
-	if (sysfs_get_str(info, NULL, "reshape_position", buf,
-			  sizeof(buf)) < 0 || strncmp(buf, "none", 4) != 0) {
+	if (sysfs_get_str(info, NULL, "reshape_position", buf, sizeof(buf)) < 0 ||
+	    str_is_none(buf) == false) {
 		/* The abort might only be temporary.  Wait up to 10
 		 * seconds for fd to contain a valid number again.
 		 */
@@ -4240,7 +4239,7 @@ static int grow_backup(struct mdinfo *sra,
 			if (sd->disk.state & (1<<MD_DISK_FAULTY))
 				continue;
 			if (sd->disk.state & (1<<MD_DISK_SYNC)) {
-				char sbuf[100];
+				char sbuf[SYSFS_MAX_BUF_SIZE];
 
 				if (sysfs_get_str(sra, sd, "state",
 						  sbuf, sizeof(sbuf)) < 0 ||
