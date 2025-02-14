@@ -1,3 +1,55 @@
+mdadm (4.2+20230223-1) experimental; urgency=medium
+
+  * Uploading to experimental.
+  * Merging upstream version 4.2+20230223.
+  * Removing documentation-keys-in-service-files.patch, included upstream.
+  * Removing fix-command-line-help.patch, included upstream.
+  * Removing strcat-look-for-md-device-in-dev-md.patch, solved differently
+    upstream.
+  * Removing conffile-location.patch, not needed anymore.
+  * Refreshing fix-manpages.patch.
+  * Refreshing mdmonitor-service-simplify.patch.
+  * Refreshing host-name-in-default-mailfrom.patch.
+  * Refreshing exit-gracefully-when-md-device-not-found.patch.
+  * Refreshing sha1-includes.patch.
+  * Refreshing readlink-path.patch.
+  * Refreshing no-Werror.patch.
+  * Refreshing test-installed.patch.
+  * Updating standards version to 4.6.2.
+  * Updating vcs fields.
+  * Updating homepage field in control.
+  * Sorting control file.
+  * Removing unneeded po-debconf build-depends.
+  * Removing groff-base from build-depends as it's pulled in by debhelper.
+  * Removing redundant debconf depends.
+  * Removing unused depends to lsb-base.
+  * Removing suggests on dracut until there's integration for it
+    available.
+  * Removing obsolete alternative depends on module-init-tools.
+  * Reworking package descriptions.
+  * Removing old debian news.
+  * Removing obsolete doc-base integration.
+  * Removing unused salsa-ci.
+  * Marking maintainer scripts executable in debian tree.
+  * Moving scripts to subdirectory in debian tree.
+  * Moving docs to subdirectory in debian tree.
+  * Moving initramfs-tools files to subdirectory in debian tree.
+  * Moving reportbug files to subdirectory in debian tree.
+  * Removing conditional mta suggests/recommends, the mta should not be
+    pulled in by default via recommends.
+  * Also installing apport hook on debian.
+  * Only modprobing efivars on efi systems (Closes: #996622).
+  * Mounting efivarfs in initrd for Intel fakeraid support (Closes:
+    #1003352).
+  * Refreshing debconf po files.
+  * Harmonizing debconf-po file headers.
+  * Shortening depends in tests control.
+  * No longer including the individual announcement files from very old
+    mdadm versions and the current one doesn't contain much information
+    anymore.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Sat, 25 Feb 2023 18:55:13 +0100
+
 mdadm (4.2-5) sid; urgency=medium
 
   * Uploading to sid.
