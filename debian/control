@@ -6,7 +6,6 @@ Build-Depends:
  debhelper-compat (= 13),
  groff-base,
  libudev-dev,
- po-debconf,
 Rules-Requires-Root: no
 Standards-Version: 4.6.2
 Homepage: https://raid.wiki.kernel.org
