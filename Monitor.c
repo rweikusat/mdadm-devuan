@@ -451,17 +451,19 @@ static int check_one_sharer(int scan)
 		return 2;
 	}
 
-	if (access(AUTOREBUILD_PID_PATH, F_OK) != 0)
-		return 0;
+	fp = fopen(AUTOREBUILD_PID_PATH, "r");
+	if (!fp) {
+		/* PID file does not exist */
+		if (errno == ENOENT)
+			return 0;
 
-	if (!is_file(AUTOREBUILD_PID_PATH)) {
-		pr_err("%s is not a regular file.\n", AUTOREBUILD_PID_PATH);
+		pr_err("Cannot open %s file.\n", AUTOREBUILD_PID_PATH);
 		return 2;
 	}
 
-	fp = fopen(AUTOREBUILD_PID_PATH, "r");
-	if (!fp) {
-		pr_err("Cannot open %s file.\n", AUTOREBUILD_PID_PATH);
+	if (!is_file(AUTOREBUILD_PID_PATH)) {
+		pr_err("%s is not a regular file.\n", AUTOREBUILD_PID_PATH);
+		fclose(fp);
 		return 2;
 	}
 
@@ -1006,34 +1008,6 @@ static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist)
 	return new_found;
 }
 
-static int get_required_spare_criteria(struct state *st,
-				       struct spare_criteria *sc)
-{
-	int fd;
-
-	if (!st->metadata || !st->metadata->ss->get_spare_criteria) {
-		sc->min_size = 0;
-		sc->sector_size = 0;
-		return 0;
-	}
-
-	fd = open(st->devname, O_RDONLY);
-	if (fd < 0)
-		return 1;
-	if (st->metadata->ss->external)
-		st->metadata->ss->load_container(st->metadata, fd, st->devname);
-	else
-		st->metadata->ss->load_super(st->metadata, fd, st->devname);
-	close(fd);
-	if (!st->metadata->sb)
-		return 1;
-
-	st->metadata->ss->get_spare_criteria(st->metadata, sc);
-	st->metadata->ss->free_super(st->metadata);
-
-	return 0;
-}
-
 static int check_donor(struct state *from, struct state *to)
 {
 	struct state *sub;
@@ -1068,22 +1042,12 @@ static dev_t choose_spare(struct state *from, struct state *to,
 	for (d = from->raid; !dev && d < MAX_DISKS; d++) {
 		if (from->devid[d] > 0 && from->devstate[d] == 0) {
 			struct dev_policy *pol;
-			unsigned long long dev_size;
-			unsigned int dev_sector_size;
 
 			if (to->metadata->ss->external &&
 			    test_partition_from_id(from->devid[d]))
 				continue;
 
-			if (sc->min_size &&
-			    dev_size_from_id(from->devid[d], &dev_size) &&
-			    dev_size < sc->min_size)
-				continue;
-
-			if (sc->sector_size &&
-			    dev_sector_size_from_id(from->devid[d],
-						    &dev_sector_size) &&
-			    sc->sector_size != dev_sector_size)
+			if (devid_matches_criteria(to->metadata, from->devid[d], sc) == false)
 				continue;
 
 			pol = devid_policy(from->devid[d]);
@@ -1168,12 +1132,12 @@ static void try_spare_migration(struct state *statelist)
 {
 	struct state *from;
 	struct state *st;
-	struct spare_criteria sc;
 
 	link_containers_with_subarrays(statelist);
 	for (st = statelist; st; st = st->next)
 		if (st->active < st->raid && st->spare == 0 && !st->err) {
 			struct domainlist *domlist = NULL;
+			struct spare_criteria sc = {0};
 			int d;
 			struct state *to = st;
 
@@ -1186,8 +1150,11 @@ static void try_spare_migration(struct state *statelist)
 				/* member of a container */
 				to = to->parent;
 
-			if (get_required_spare_criteria(to, &sc))
-				continue;
+			if (to->metadata->ss->get_spare_criteria)
+				if (to->metadata->ss->get_spare_criteria(to->metadata, to->devname,
+									 &sc))
+					continue;
+
 			if (to->metadata->ss->external) {
 				/* We must make sure there is
 				 * no suitable spare in container already.
@@ -1228,6 +1195,7 @@ static void try_spare_migration(struct state *statelist)
 				}
 			}
 			domain_free(domlist);
+			dev_policy_free(sc.pols);
 		}
 }
 

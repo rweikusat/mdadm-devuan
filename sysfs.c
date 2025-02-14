@@ -74,6 +74,29 @@ void sysfs_free(struct mdinfo *sra)
 	}
 }
 
+/**
+ * sysfs_get_container_devnm() - extract container device name.
+ * @mdi: md_info describes member array, with GET_VERSION option.
+ * @buf: buf to fill, must be MD_NAME_MAX.
+ *
+ * External array version is in format {/,-}<container_devnm>/<array_index>
+ * Extract container_devnm from it and safe it in @buf.
+ */
+void sysfs_get_container_devnm(struct mdinfo *mdi, char *buf)
+{
+	char *p;
+
+	assert(is_subarray(mdi->text_version));
+
+	/* Skip first special sign */
+	snprintf(buf, MD_NAME_MAX, "%s", mdi->text_version + 1);
+
+	/* Remove array index */
+	p = strchr(buf, '/');
+	if (p)
+		*p = 0;
+}
+
 int sysfs_open(char *devnm, char *devname, char *attr)
 {
 	char fname[MAX_SYSFS_PATH_LEN];
@@ -655,7 +678,7 @@ int sysfs_set_safemode(struct mdinfo *sra, unsigned long ms)
 	return sysfs_set_str(sra, NULL, "safe_mode_delay", delay);
 }
 
-int sysfs_set_array(struct mdinfo *info, int vers)
+int sysfs_set_array(struct mdinfo *info)
 {
 	int rv = 0;
 	char ver[100];
@@ -679,9 +702,7 @@ int sysfs_set_array(struct mdinfo *info, int vers)
 			if (strlen(buf) >= 9 && buf[9] == '-')
 				ver[9] = '-';
 
-		if ((vers % 100) < 2 ||
-		    sysfs_set_str(info, NULL, "metadata_version",
-				  ver) < 0) {
+		if (sysfs_set_str(info, NULL, "metadata_version", ver) < 0) {
 			pr_err("This kernel does not support external metadata.\n");
 			return 1;
 		}
@@ -1099,4 +1120,33 @@ void sysfsline(char *line)
 
 	sr->next = sysfs_rules;
 	sysfs_rules = sr;
+}
+
+/**
+ * sysfs_is_libata_allow_tpm_enabled() - check if libata allow_tmp is enabled.
+ * @verbose: verbose flag.
+ *
+ * Check if libata allow_tmp flag is set, this is required for SATA Opal Security commands to work.
+ *
+ * Return: true if allow_tpm enable, false otherwise.
+ */
+bool sysfs_is_libata_allow_tpm_enabled(const int verbose)
+{
+	const char *path = "/sys/module/libata/parameters/allow_tpm";
+	const char *expected_value = "1";
+	int fd = open(path, O_RDONLY);
+	char buf[3];
+
+	if (!is_fd_valid(fd)) {
+		pr_vrb("Failed open file descriptor to %s. Cannot check libata allow_tpm param.\n",
+		       path);
+		return false;
+	}
+
+	sysfs_fd_get_str(fd, buf, sizeof(buf));
+	close(fd);
+
+	if (strncmp(buf, expected_value, 1) == 0)
+		return true;
+	return false;
 }

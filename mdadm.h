@@ -430,8 +430,10 @@ struct createinfo {
 };
 
 struct spare_criteria {
+	bool criteria_set;
 	unsigned long long min_size;
 	unsigned int sector_size;
+	struct dev_policy *pols;
 };
 
 typedef enum mdadm_status {
@@ -776,6 +778,8 @@ enum sysfs_read_flags {
 
 #define SYSFS_MAX_BUF_SIZE 64
 
+extern void sysfs_get_container_devnm(struct mdinfo *mdi, char *buf);
+
 /* If fd >= 0, get the array it is open on,
  * else use devnm.
  */
@@ -807,7 +811,7 @@ extern int sysfs_attribute_available(struct mdinfo *sra, struct mdinfo *dev,
 extern int sysfs_get_str(struct mdinfo *sra, struct mdinfo *dev,
 			 char *name, char *val, int size);
 extern int sysfs_set_safemode(struct mdinfo *sra, unsigned long ms);
-extern int sysfs_set_array(struct mdinfo *info, int vers);
+extern int sysfs_set_array(struct mdinfo *info);
 extern int sysfs_add_disk(struct mdinfo *sra, struct mdinfo *sd, int resume);
 extern int sysfs_disk_to_scsi_id(int fd, __u32 *id);
 extern int sysfs_unique_holder(char *devnm, long rdev);
@@ -849,6 +853,7 @@ extern int restore_stripes(int *dest, unsigned long long *offsets,
 			   int source, unsigned long long read_offset,
 			   unsigned long long start, unsigned long long length,
 			   char *src_buf);
+extern bool sysfs_is_libata_allow_tpm_enabled(const int verbose);
 
 #ifndef Sendmail
 #define Sendmail "/usr/lib/sendmail -t"
@@ -936,6 +941,23 @@ struct reshape {
 	unsigned long long stripes; /* number of old stripes that comprise 'blocks'*/
 	unsigned long long new_size; /* New size of array in sectors */
 };
+
+/**
+ * struct dev_policy - Data structure for policy management.
+ * @next: pointer to next dev_policy.
+ * @name: policy name, category.
+ * @metadata: the metadata type it affects.
+ * @value: value of the policy.
+ *
+ * The functions to manipulate dev_policy lists do not free elements, so they must be statically
+ * allocated. @name and @metadata can be compared by address.
+ */
+typedef struct dev_policy {
+	struct dev_policy *next;
+	char *name;
+	const char *metadata;
+	const char *value;
+} dev_policy_t;
 
 /* A superswitch provides entry point to a metadata handler.
  *
@@ -1115,10 +1137,9 @@ extern struct superswitch {
 	 * Return spare criteria for array:
 	 * - minimum disk size can be used in array;
 	 * - sector size can be used in array.
-	 * Return values: 0 - for success and -EINVAL on error.
 	 */
-	int (*get_spare_criteria)(struct supertype *st,
-				  struct spare_criteria *sc);
+	mdadm_status_t (*get_spare_criteria)(struct supertype *st, char *mddev_path,
+					     struct spare_criteria *sc);
 	/* Find somewhere to put a bitmap - possibly auto-size it - and
 	 * update the metadata to record this.  The array may be newly
 	 * created, in which case data_size may be updated, or it might
@@ -1165,6 +1186,25 @@ extern struct superswitch {
 				 unsigned long long data_offset,
 				 char *subdev, unsigned long long *freesize,
 				 int consistency_policy, int verbose);
+
+	/**
+	 * test_and_add_drive_policies() - test new and add custom policies from metadata handler.
+	 * @pols: list of currently recorded policies.
+	 * @disk_fd: file descriptor of the device to check.
+	 * @verbose: verbose flag.
+	 *
+	 * Used by IMSM to verify all drives in container/array, against requirements not recored
+	 * in superblock, like controller type for IMSM. It should check all drives even if
+	 * they are not actually used, because mdmon or kernel are free to use any drive assigned to
+	 * container automatically.
+	 *
+	 * Generating and comparison methods belong to metadata handler. It is not mandatory to be
+	 * implemented.
+	 *
+	 * Return: MDADM_STATUS_SUCCESS is expected on success.
+	 */
+	mdadm_status_t (*test_and_add_drive_policies)(dev_policy_t **pols, int disk_fd,
+						      const int verbose);
 
 	/* Return a linked list of 'mdinfo' structures for all arrays
 	 * in the container.  For non-containers, it is like
@@ -1247,21 +1287,6 @@ extern struct superswitch {
 	 */
 	struct mdinfo *(*activate_spare)(struct active_array *a,
 					 struct metadata_update **updates);
-	/*
-	 * Return statically allocated string that represents metadata specific
-	 * controller domain of the disk. The domain is used in disk domain
-	 * matching functions. Disks belong to the same domain if the they have
-	 * the same domain from mdadm.conf and belong the same metadata domain.
-	 * Returning NULL or not providing this handler means that metadata
-	 * does not distinguish the differences between disks that belong to
-	 * different controllers. They are in the domain specified by
-	 * configuration file (mdadm.conf).
-	 * In case when the metadata has the notion of domains based on disk
-	 * it shall return NULL for disks that do not belong to the controller
-	 * the supported domains. Such disks will form another domain and won't
-	 * be mixed with supported ones.
-	 */
-	const char *(*get_disk_controller_domain)(const char *path);
 
 	/* for external backup area */
 	int (*recover_backup)(struct supertype *st, struct mdinfo *info);
@@ -1368,26 +1393,7 @@ extern struct supertype *dup_super(struct supertype *st);
 extern int get_dev_size(int fd, char *dname, unsigned long long *sizep);
 extern int get_dev_sector_size(int fd, char *dname, unsigned int *sectsizep);
 extern int must_be_container(int fd);
-extern int dev_size_from_id(dev_t id, unsigned long long *size);
-extern int dev_sector_size_from_id(dev_t id, unsigned int *size);
 void wait_for(char *dev, int fd);
-
-/*
- * Data structures for policy management.
- * Each device can have a policy structure that lists
- * various name/value pairs each possibly with a metadata associated.
- * The policy list is sorted by name/value/metadata
- */
-struct dev_policy {
-	struct dev_policy *next;
-	char *name;	/* None of these strings are allocated.  They are
-			 * all just references to strings which are known
-			 * to exist elsewhere.
-			 * name and metadata can be compared by address equality.
-			 */
-	const char *metadata;
-	const char *value;
-};
 
 extern char pol_act[], pol_domain[], pol_metadata[], pol_auto[];
 
@@ -1430,9 +1436,15 @@ extern struct dev_policy *disk_policy(struct mdinfo *disk);
 extern struct dev_policy *devid_policy(int devid);
 extern void dev_policy_free(struct dev_policy *p);
 
-//extern void pol_new(struct dev_policy **pol, char *name, char *val, char *metadata);
 extern void pol_add(struct dev_policy **pol, char *name, char *val, char *metadata);
 extern struct dev_policy *pol_find(struct dev_policy *pol, char *name);
+
+extern mdadm_status_t drive_test_and_add_policies(struct supertype *st, dev_policy_t **pols,
+						  int fd, const int verbose);
+extern mdadm_status_t sysfs_test_and_add_drive_policies(struct supertype *st, dev_policy_t **pols,
+							struct mdinfo *mdi, const int verbose);
+extern mdadm_status_t mddev_test_and_add_drive_policies(struct supertype *st, dev_policy_t **pols,
+							int array_fd, const int verbose);
 
 enum policy_action {
 	act_default,
@@ -1661,6 +1673,7 @@ extern char *conf_get_program(void);
 extern char *conf_get_homehost(int *require_homehostp);
 extern char *conf_get_homecluster(void);
 extern int conf_get_monitor_delay(void);
+extern bool conf_get_sata_opal_encryption_no_verify(void);
 extern char *conf_line(FILE *file);
 extern char *conf_word(FILE *file, int allow_key);
 extern void print_quoted(char *str);
@@ -1685,8 +1698,7 @@ extern const int uuid_zero[4];
 extern int same_uuid(int a[4], int b[4], int swapuuid);
 extern void copy_uuid(void *a, int b[4], int swapuuid);
 extern char *__fname_from_uuid(int id[4], int swap, char *buf, char sep);
-extern char *fname_from_uuid(struct supertype *st,
-			     struct mdinfo *info, char *buf, char sep);
+extern char *fname_from_uuid(struct mdinfo *info, char *buf);
 extern unsigned long calc_csum(void *super, int bytes);
 extern int enough(int level, int raid_disks, int layout, int clean,
 		   char *avail);
@@ -1708,6 +1720,9 @@ extern int assemble_container_content(struct supertype *st, int mdfd,
 #define	INCR_UNSAFE	2
 #define	INCR_ALREADY	4
 #define	INCR_YES	8
+
+extern bool devid_matches_criteria(struct supertype *st, dev_t devid, struct spare_criteria *sc);
+extern bool disk_fd_matches_criteria(struct supertype *st, int disk_fd, struct spare_criteria *sc);
 extern struct mdinfo *container_choose_spares(struct supertype *st,
 					      struct spare_criteria *criteria,
 					      struct domainlist *domlist,
@@ -1856,11 +1871,10 @@ static inline char *to_subarray(struct mdstat_ent *ent, char *container)
  */
 static inline sighandler_t signal_s(int sig, sighandler_t handler)
 {
-	struct sigaction new_act;
-	struct sigaction old_act;
+	struct sigaction new_act = {0};
+	struct sigaction old_act = {0};
 
 	new_act.sa_handler = handler;
-	new_act.sa_flags = 0;
 
 	if (sigaction(sig, &new_act, &old_act) == 0)
 		return old_act.sa_handler;
@@ -1898,6 +1912,8 @@ static inline int xasprintf(char **strp, const char *fmt, ...) {
 #define cont_err(fmt ...) fprintf(stderr, "       " fmt)
 
 #define pr_info(fmt, args...) printf("%s: "fmt, Name, ##args)
+
+#define pr_vrb(fmt, arg...) ((void)(verbose && pr_err(fmt, ##arg)))
 
 void *xmalloc(size_t len);
 void *xrealloc(void *ptr, size_t len);
