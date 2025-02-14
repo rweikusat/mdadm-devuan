@@ -1,3 +1,13 @@
+mdadm (4.2+20230302-1) experimental; urgency=medium
+
+  * Uploading to experimental.
+  * Merging upstream version 4.2+20230302.
+  * Updating host-name-in-default-mailfrom.patch for new upstream.
+  * Updating exit-gracefully-when-md-device-not-found.patch for new
+    upstream.
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Mon, 06 Mar 2023 04:25:46 +0100
+
 mdadm (4.2+20230227-1) experimental; urgency=medium
 
   * Uploading to experimental.
