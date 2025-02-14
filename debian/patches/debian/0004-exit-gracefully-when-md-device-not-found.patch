@@ -13,7 +13,7 @@ diff -Naurp mdadm.orig/Monitor.c mdadm/Monitor.c
 +	if (st->devnm[0] == 0) {
 +		char *found = fd2devnm(fd);
 +		if (!found) {
-+			alert("DeviceDisappeared", dev, NULL, ainfo);
++			alert(EVENT_DEVICE_DISAPPEARED, NULL, 0, dev, NULL);
 +			goto out;
 +		}
 +		snprintf(st->devnm, MD_NAME_MAX, "%s", found);
