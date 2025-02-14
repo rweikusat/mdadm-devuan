@@ -670,7 +670,7 @@ static void find_reject(int mdfd, struct supertype *st, struct mdinfo *sra,
 			continue;
 
 		if (d->disk.raid_disk > -1)
-			sysfs_set_str(sra, d, "slot", "none");
+			sysfs_set_str(sra, d, "slot", STR_COMMON_NONE);
 		if (sysfs_set_str(sra, d, "state", "remove") == 0)
 			if (verbose >= 0)
 				pr_err("removing old device %s from %s\n",
@@ -1650,7 +1650,7 @@ int IncrementalRemove(char *devname, char *id_path, int verbose)
 	struct mdstat_ent *ent;
 	struct mddev_dev devlist;
 	struct mdinfo mdi;
-	char buf[32];
+	char buf[SYSFS_MAX_BUF_SIZE];
 
 	if (!id_path)
 		dprintf("incremental removal without --path <id_path> lacks the possibility to re-add new device in this port\n");

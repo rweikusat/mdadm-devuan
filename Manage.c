@@ -181,7 +181,7 @@ int Manage_stop(char *devname, int fd, int verbose, int will_retry)
 	char container[32];
 	int err;
 	int count;
-	char buf[32];
+	char buf[SYSFS_MAX_BUF_SIZE];
 	unsigned long long rd1, rd2;
 
 	if (will_retry && verbose == 0)
@@ -312,7 +312,7 @@ int Manage_stop(char *devname, int fd, int verbose, int will_retry)
 	if (mdi && is_level456(mdi->array.level) &&
 	    sysfs_attribute_available(mdi, NULL, "sync_action") &&
 	    sysfs_attribute_available(mdi, NULL, "reshape_direction") &&
-	    sysfs_get_str(mdi, NULL, "sync_action", buf, 20) > 0 &&
+	    sysfs_get_str(mdi, NULL, "sync_action", buf, sizeof(buf)) > 0 &&
 	    strcmp(buf, "reshape\n") == 0 &&
 	    sysfs_get_two(mdi, NULL, "raid_disks", &rd1, &rd2) == 2) {
 		unsigned long long position, curr;
@@ -402,7 +402,7 @@ int Manage_stop(char *devname, int fd, int verbose, int will_retry)
 			unsigned long long max_completed;
 			sysfs_get_ll(mdi, NULL, "reshape_position", &curr);
 			sysfs_fd_get_str(scfd, buf, sizeof(buf));
-			if (strncmp(buf, "none", 4) == 0) {
+			if (str_is_none(buf) == true) {
 				/* Either reshape has aborted, or hasn't
 				 * quite started yet.  Wait a bit and
 				 * check  'sync_action' to see.
@@ -1519,8 +1519,8 @@ int Manage_subdevs(char *devname, int fd,
 			sprintf(dname, "dev-%s", dv->devname);
 			sysfd = sysfs_open(fd2devnm(fd), dname, "block/dev");
 			if (sysfd >= 0) {
-				char dn[20];
-				if (sysfs_fd_get_str(sysfd, dn, 20) > 0 &&
+				char dn[SYSFS_MAX_BUF_SIZE];
+				if (sysfs_fd_get_str(sysfd, dn, sizeof(dn)) > 0 &&
 				    sscanf(dn, "%d:%d", &mj,&mn) == 2) {
 					rdev = makedev(mj,mn);
 					found = 1;
@@ -1749,6 +1749,7 @@ int Update_subarray(char *dev, char *subarray, enum update_opt update,
 	int fd, rv = 2;
 	struct mdinfo *info = NULL;
 	char *update_verb = map_num(update_options, update);
+	bool allow_active = update == UOPT_PPL || update == UOPT_NO_PPL;
 
 	memset(st, 0, sizeof(*st));
 
@@ -1763,7 +1764,7 @@ int Update_subarray(char *dev, char *subarray, enum update_opt update,
 		goto free_super;
 	}
 
-	if (is_subarray_active(subarray, st->devnm)) {
+	if (!allow_active && is_subarray_active(subarray, st->devnm)) {
 		if (verbose >= 0)
 			pr_err("Subarray %s in %s is active, cannot update %s\n",
 				subarray, dev, update_verb);
