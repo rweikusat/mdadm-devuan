@@ -15,7 +15,8 @@ _Description: no systemd init-system detected
  .
  Beginning with newer versions of the mdadm package, init-system integration
  is available for systemd only. This system seems to use an alternative
- init-system which might or might not leave your system unbootable.
+ init-system which might or might not leave your system unbootable and
+ will not run any of the maintenance jobs automatically.
 
 Template: mdadm/autocheck
 Type: boolean
