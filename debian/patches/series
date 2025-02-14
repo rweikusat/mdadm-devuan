@@ -8,3 +8,4 @@ debian/0007-no-Werror.patch
 debian/0008-test-installed.patch
 debian/0009-randomize-timers.patch
 debian/0010-systemd-honor-debconf-daily-scan.patch
+debian/0011-mdcheck-fix-empty-spaces-in-timer-unit-files.patch
