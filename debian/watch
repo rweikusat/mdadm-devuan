@@ -1,3 +1,4 @@
 version=4
-opts="uversionmangle=s/-rc/~rc/" \
-  https://www.kernel.org/pub/linux/utils/raid/mdadm/mdadm-([.[:digit:]]+(?:-rc[[:digit:]]+)?).tar.gz
+opts="uversionmangle=s/-rc/~rc/, \
+ dversionmangle=s/\+\d\S+//" \
+https://www.kernel.org/pub/linux/utils/raid/mdadm/mdadm-([.[:digit:]]+(?:-rc[[:digit:]]+)?).tar.gz
