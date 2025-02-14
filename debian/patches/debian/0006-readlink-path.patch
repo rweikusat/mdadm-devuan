@@ -1,18 +1,23 @@
 Author: Michael Tokarev <mjt@tls.msk.ru>
-Description: readlink is in /bin not /usr/bin on debian (Closes: #766416).
+Description: readlink and basename are in /bin not /usr/bin on debian (Closes: #766416).
  This is a debian-specific change, upstream ships
- the rule to use /usr/bin/readlink while on debian
- it is /bin/readlink
+ the rule to use /usr/bin/$foo while on debian
+ it is /bin/$foo
 
 diff -Naurp mdadm.orig/udev-md-raid-arrays.rules mdadm/udev-md-raid-arrays.rules
 --- mdadm.orig/udev-md-raid-arrays.rules
 +++ mdadm/udev-md-raid-arrays.rules
-@@ -37,7 +37,7 @@ ENV{ID_FS_USAGE}=="filesystem|other", EN
+@@ -37,9 +37,9 @@ ENV{ID_FS_USAGE}=="filesystem|other", EN
  ENV{MD_LEVEL}=="raid[1-9]*", ENV{SYSTEMD_WANTS}+="mdmonitor.service"
  
  # Tell systemd to run mdmon for our container, if we need it.
 -ENV{MD_LEVEL}=="raid[1-9]*", ENV{MD_CONTAINER}=="?*", PROGRAM="/usr/bin/readlink $env{MD_CONTAINER}", ENV{MD_MON_THIS}="%c"
+-ENV{MD_MON_THIS}=="?*", TEST=="/etc/initrd-release", PROGRAM="/usr/bin/basename $env{MD_MON_THIS}", ENV{SYSTEMD_WANTS}+="mdmon@initrd-%c.service"
+-ENV{MD_MON_THIS}=="?*", TEST!="/etc/initrd-release", PROGRAM="/usr/bin/basename $env{MD_MON_THIS}", ENV{SYSTEMD_WANTS}+="mdmon@%c.service"
+-ENV{RESHAPE_ACTIVE}=="yes", PROGRAM="/usr/bin/basename $env{MD_MON_THIS}", ENV{SYSTEMD_WANTS}+="mdadm-grow-continue@%c.service"
 +ENV{MD_LEVEL}=="raid[1-9]*", ENV{MD_CONTAINER}=="?*", PROGRAM="/bin/readlink $env{MD_CONTAINER}", ENV{MD_MON_THIS}="%c"
- ENV{MD_MON_THIS}=="?*", PROGRAM="/usr/bin/basename $env{MD_MON_THIS}", ENV{SYSTEMD_WANTS}+="mdmon@%c.service"
- ENV{RESHAPE_ACTIVE}=="yes", PROGRAM="/usr/bin/basename $env{MD_MON_THIS}", ENV{SYSTEMD_WANTS}+="mdadm-grow-continue@%c.service"
++ENV{MD_MON_THIS}=="?*", TEST=="/etc/initrd-release", PROGRAM="/bin/basename $env{MD_MON_THIS}", ENV{SYSTEMD_WANTS}+="mdmon@initrd-%c.service"
++ENV{MD_MON_THIS}=="?*", TEST!="/etc/initrd-release", PROGRAM="/bin/basename $env{MD_MON_THIS}", ENV{SYSTEMD_WANTS}+="mdmon@%c.service"
++ENV{RESHAPE_ACTIVE}=="yes", PROGRAM="/bin/basename $env{MD_MON_THIS}", ENV{SYSTEMD_WANTS}+="mdadm-grow-continue@%c.service"
  
+ LABEL="md_end"
