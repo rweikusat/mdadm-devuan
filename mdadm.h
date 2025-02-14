@@ -598,9 +598,16 @@ enum prefix_standard {
 };
 
 enum bitmap_update {
-    NoUpdate,
-    NameUpdate,
-    NodeNumUpdate,
+	NoUpdate,
+	NameUpdate,
+	NodeNumUpdate,
+};
+
+enum bitmap_type {
+	BitmapNone,
+	BitmapInternal,
+	BitmapCluster,
+	BitmapUnknown,
 };
 
 enum flag_mode {
@@ -640,8 +647,7 @@ struct mddev_ident {
 	int spare_disks;
 	struct supertype *st;
 	char	*spare_group;
-	char	*bitmap_file;
-	int	bitmap_fd;
+	enum bitmap_type btype;
 
 	char	*container;	/* /dev/whatever name of container, or
 				 * uuid of container.  You would expect
@@ -693,7 +699,7 @@ struct shape {
 	char	*layout_str;
 	int	chunk;
 	int	bitmap_chunk;
-	char	*bitmap_file;
+	enum bitmap_type btype;
 	int	assume_clean;
 	bool	write_zeroes;
 	int	write_behind;
@@ -1899,15 +1905,23 @@ static inline sighandler_t signal_s(int sig, sighandler_t handler)
 }
 
 #ifdef DEBUG
+#include <time.h>
+
 #define dprintf(fmt, arg...) \
-	fprintf(stderr, "%s: %s: "fmt, Name, __func__, ##arg)
+	do { \
+		struct timespec ts; \
+		clock_gettime(CLOCK_MONOTONIC, &ts); \
+		double timestamp = ts.tv_sec + ts.tv_nsec / 1e9; \
+		fprintf(stderr, "[%10.5f] %s: %s: " fmt, timestamp, Name, __func__, ##arg); \
+	} while (0)
+
 #define dprintf_cont(fmt, arg...) \
 	fprintf(stderr, fmt, ##arg)
 #else
 #define dprintf(fmt, arg...) \
-        ({ if (0) fprintf(stderr, "%s: %s: " fmt, Name, __func__, ##arg); 0; })
+	do { } while (0)
 #define dprintf_cont(fmt, arg...) \
-        ({ if (0) fprintf(stderr, fmt, ##arg); 0; })
+	do { } while (0)
 #endif
 
 static inline int xasprintf(char **strp, const char *fmt, ...) {
