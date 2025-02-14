@@ -100,6 +100,22 @@ struct dlm_lksb {
 #define DEFAULT_BITMAP_DELAY 5
 #define DEFAULT_MAX_WRITE_BEHIND 256
 
+/* DEV_NUM_PREF is a subpath to numbered MD devices, e.g. /dev/md1 or directory name.
+ * DEV_NUM_PREF_LEN is a length with Null byte excluded.
+ */
+#ifndef DEV_NUM_PREF
+#define DEV_NUM_PREF "/dev/md"
+#define DEV_NUM_PREF_LEN (sizeof(DEV_NUM_PREF) - 1)
+#endif /* DEV_NUM_PREF */
+
+/* DEV_MD_DIR points to named MD devices directory.
+ * DEV_MD_DIR_LEN is a length with Null byte excluded.
+ */
+#ifndef DEV_MD_DIR
+#define DEV_MD_DIR "/dev/md/"
+#define DEV_MD_DIR_LEN (sizeof(DEV_MD_DIR) - 1)
+#endif /* DEV_MD_DIR */
+
 /* MAP_DIR should be somewhere that persists across the pivotroot
  * from early boot to late boot.
  * /run  seems to have emerged as the best standard.
@@ -1263,6 +1279,8 @@ extern struct superswitch super0, super1;
 extern struct superswitch super_imsm, super_ddf;
 extern struct superswitch mbr, gpt;
 
+void imsm_set_no_platform(int v);
+
 struct metadata_update {
 	int	len;
 	char	*buf;
@@ -1583,7 +1601,7 @@ int default_layout(struct supertype *st, int level, int verbose);
 extern int is_near_layout_10(int layout);
 extern int parse_layout_10(char *layout);
 extern int parse_layout_faulty(char *layout);
-extern int parse_num(int *dest, char *num);
+extern int parse_num(int *dest, const char *num);
 extern int parse_cluster_confirm_arg(char *inp, char **devname, int *slot);
 extern int check_ext2(int fd, char *name);
 extern int check_reiser(int fd, char *name);
@@ -1608,7 +1626,7 @@ extern int same_dev(char *one, char *two);
 extern int compare_paths (char* path1,char* path2);
 extern void enable_fds(int devices);
 extern void manage_fork_fds(int close_all);
-extern int continue_via_systemd(char *devnm, char *service_name);
+extern int continue_via_systemd(char *devnm, char *service_name, char *prefix);
 
 extern void ident_init(struct mddev_ident *ident);
 
@@ -1632,6 +1650,9 @@ extern void print_escape(char *str);
 extern int use_udev(void);
 extern unsigned long GCD(unsigned long a, unsigned long b);
 extern int conf_name_is_free(char *name);
+extern bool is_devname_ignore(char *devname);
+extern bool is_devname_md_numbered(const char *devname);
+extern bool is_devname_md_d_numbered(const char *devname);
 extern int conf_verify_devnames(struct mddev_ident *array_list);
 extern int devname_matches(char *name, char *match);
 extern struct mddev_ident *conf_match(struct supertype *st,

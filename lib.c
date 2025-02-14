@@ -313,7 +313,7 @@ char *map_dev_preferred(int major, int minor, int create,
 
 	for (p = devlist; p; p = p->next)
 		if (p->major == major && p->minor == minor) {
-			if (strncmp(p->name, "/dev/md/",8) == 0 ||
+			if (strncmp(p->name, DEV_MD_DIR, DEV_MD_DIR_LEN) == 0 ||
 			    (prefer && strstr(p->name, prefer))) {
 				if (preferred == NULL ||
 				    strlen(p->name) < strlen(preferred))
@@ -570,7 +570,7 @@ void free_line(char *line)
  *
  * Return: 0 on success, 1 otherwise.
  */
-int parse_num(int *dest, char *num)
+int parse_num(int *dest, const char *num)
 {
 	char *c = NULL;
 	long temp;

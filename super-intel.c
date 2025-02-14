@@ -20,6 +20,7 @@
 #define HAVE_STDINT_H 1
 #include "mdadm.h"
 #include "mdmon.h"
+#include "dlink.h"
 #include "sha1.h"
 #include "platform-intel.h"
 #include <values.h>
@@ -626,8 +627,47 @@ static const char *_sys_dev_type[] = {
 	[SYS_DEV_SAS] = "SAS",
 	[SYS_DEV_SATA] = "SATA",
 	[SYS_DEV_NVME] = "NVMe",
-	[SYS_DEV_VMD] = "VMD"
+	[SYS_DEV_VMD] = "VMD",
+	[SYS_DEV_SATA_VMD] = "SATA VMD"
 };
+
+static int no_platform = -1;
+
+static int check_no_platform(void)
+{
+	static const char search[] = "mdadm.imsm.test=1";
+	FILE *fp;
+
+	if (no_platform >= 0)
+		return no_platform;
+
+	if (check_env("IMSM_NO_PLATFORM")) {
+		no_platform = 1;
+		return 1;
+	}
+	fp = fopen("/proc/cmdline", "r");
+	if (fp) {
+		char *l = conf_line(fp);
+		char *w = l;
+
+		do {
+			if (strcmp(w, search) == 0)
+				no_platform = 1;
+			w = dl_next(w);
+		} while (w != l);
+		free_line(l);
+		fclose(fp);
+		if (no_platform >= 0)
+			return no_platform;
+	}
+	no_platform = 0;
+	return 0;
+}
+
+void imsm_set_no_platform(int v)
+{
+	no_platform = v;
+}
 
 const char *get_sys_dev_type(enum sys_dev_type type)
 {
@@ -2270,7 +2310,7 @@ static void brief_examine_subarrays_imsm(struct supertype *st, int verbose)
 		super->current_vol = i;
 		getinfo_super_imsm(st, &info, NULL);
 		fname_from_uuid(st, &info, nbuf1, ':');
-		printf("ARRAY /dev/md/%.16s container=%s member=%d UUID=%s\n",
+		printf("ARRAY " DEV_MD_DIR "%.16s container=%s member=%d UUID=%s\n",
 		       dev->volume, nbuf + 5, i, nbuf1 + 5);
 	}
 }
@@ -2559,6 +2599,8 @@ static void print_found_intel_controllers(struct sys_dev *elem)
 
 		if (elem->type == SYS_DEV_VMD)
 			fprintf(stderr, "VMD domain");
+		else if (elem->type == SYS_DEV_SATA_VMD)
+			fprintf(stderr, "SATA VMD domain");
 		else
 			fprintf(stderr, "RAID controller");
 
@@ -2699,7 +2741,7 @@ static int detail_platform_imsm(int verbose, int enumerate_only, char *controlle
 	int result=1;
 
 	if (enumerate_only) {
-		if (check_env("IMSM_NO_PLATFORM"))
+		if (check_no_platform())
 			return 0;
 		list = find_intel_devices();
 		if (!list)
@@ -2729,8 +2771,9 @@ static int detail_platform_imsm(int verbose, int enumerate_only, char *controlle
 		if (!find_imsm_capability(hba)) {
 			char buf[PATH_MAX];
 			pr_err("imsm capabilities not found for controller: %s (type %s)\n",
-				  hba->type == SYS_DEV_VMD ? vmd_domain_to_controller(hba, buf) : hba->path,
-				  get_sys_dev_type(hba->type));
+				  hba->type == SYS_DEV_VMD || hba->type == SYS_DEV_SATA_VMD ?
+				  vmd_domain_to_controller(hba, buf) :
+				  hba->path, get_sys_dev_type(hba->type));
 			continue;
 		}
 		result = 0;
@@ -2783,11 +2826,12 @@ static int detail_platform_imsm(int verbose, int enumerate_only, char *controlle
 
 			printf(" I/O Controller : %s (%s)\n",
 				hba->path, get_sys_dev_type(hba->type));
-			if (hba->type == SYS_DEV_SATA) {
+			if (hba->type == SYS_DEV_SATA || hba->type == SYS_DEV_SATA_VMD) {
 				host_base = ahci_get_port_count(hba->path, &port_count);
 				if (ahci_enumerate_ports(hba->path, port_count, host_base, verbose)) {
 					if (verbose > 0)
-						pr_err("failed to enumerate ports on SATA controller at %s.\n", hba->pci_id);
+						pr_err("failed to enumerate ports on %s controller at %s.\n",
+							get_sys_dev_type(hba->type), hba->pci_id);
 					result |= 2;
 				}
 			}
@@ -2817,7 +2861,8 @@ static int export_detail_platform_imsm(int verbose, char *controller_path)
 		if (!find_imsm_capability(hba) && verbose > 0) {
 			char buf[PATH_MAX];
 			pr_err("IMSM_DETAIL_PLATFORM_ERROR=NO_IMSM_CAPABLE_DEVICE_UNDER_%s\n",
-			hba->type == SYS_DEV_VMD ? vmd_domain_to_controller(hba, buf) : hba->path);
+				hba->type == SYS_DEV_VMD || hba->type == SYS_DEV_SATA_VMD ?
+				vmd_domain_to_controller(hba, buf) : hba->path);
 		}
 		else
 			result = 0;
@@ -2826,7 +2871,7 @@ static int export_detail_platform_imsm(int verbose, char *controller_path)
 	const struct orom_entry *entry;
 
 	for (entry = orom_entries; entry; entry = entry->next) {
-		if (entry->type == SYS_DEV_VMD) {
+		if (entry->type == SYS_DEV_VMD || entry->type == SYS_DEV_SATA_VMD) {
 			for (hba = list; hba; hba = hba->next)
 				print_imsm_capability_export(&entry->orom);
 			continue;
@@ -4722,7 +4767,7 @@ static int find_intel_hba_capability(int fd, struct intel_super *super, char *de
 		       devname);
 		return 1;
 	}
-	if (!is_fd_valid(fd) || check_env("IMSM_NO_PLATFORM")) {
+	if (!is_fd_valid(fd) || check_no_platform()) {
 		super->orom = NULL;
 		super->hba = NULL;
 		return 0;
@@ -4743,10 +4788,12 @@ static int find_intel_hba_capability(int fd, struct intel_super *super, char *de
 				"    but the container is assigned to Intel(R) %s %s (",
 				devname,
 				get_sys_dev_type(hba_name->type),
-				hba_name->type == SYS_DEV_VMD ? "domain" : "RAID controller",
+				hba_name->type == SYS_DEV_VMD || hba_name->type == SYS_DEV_SATA_VMD ?
+					"domain" : "RAID controller",
 				hba_name->pci_id ? : "Err!",
 				get_sys_dev_type(super->hba->type),
-				hba->type == SYS_DEV_VMD ? "domain" : "RAID controller");
+				hba->type == SYS_DEV_VMD || hba_name->type == SYS_DEV_SATA_VMD ?
+					"domain" : "RAID controller");
 
 			while (hba) {
 				fprintf(stderr, "%s", hba->pci_id ? : "Err!");
@@ -10697,7 +10744,7 @@ static int imsm_get_allowed_degradation(int level, int raid_disks,
  ******************************************************************************/
 int validate_container_imsm(struct mdinfo *info)
 {
-	if (check_env("IMSM_NO_PLATFORM"))
+	if (check_no_platform())
 		return 0;
 
 	struct sys_dev *idev;
@@ -11235,7 +11282,7 @@ static const char *imsm_get_disk_controller_domain(const char *path)
 		hba = find_disk_attached_hba(-1, path);
 		if (hba && hba->type == SYS_DEV_SAS)
 			drv = "isci";
-		else if (hba && hba->type == SYS_DEV_SATA)
+		else if (hba && (hba->type == SYS_DEV_SATA || hba->type == SYS_DEV_SATA_VMD))
 			drv = "ahci";
 		else if (hba && hba->type == SYS_DEV_VMD)
 			drv = "vmd";

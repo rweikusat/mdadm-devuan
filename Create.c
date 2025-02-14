@@ -328,7 +328,7 @@ static int update_metadata(int mdfd, struct shape *s, struct supertype *st,
 	 * again returns container info.
 	 */
 	st->ss->getinfo_super(st, &info_new, NULL);
-	if (st->ss->external && is_container(s->level) &&
+	if (st->ss->external && !is_container(s->level) &&
 	    !same_uuid(info_new.uuid, info->uuid, 0)) {
 		map_update(map, fd2devnm(mdfd),
 			   info_new.text_version,
@@ -636,11 +636,6 @@ int Create(struct supertype *st, char *mddev,
 		break;
 	case LEVEL_LINEAR:
 		/* a chunksize of zero 0s perfectly valid (and preferred) since 2.6.16 */
-		if (get_linux_version() < 2006016 && s->chunk == 0) {
-			s->chunk = 64;
-			if (c->verbose > 0)
-				pr_err("chunk size defaults to 64K\n");
-		}
 		break;
 	case 1:
 	case LEVEL_FAULTY:
@@ -1029,10 +1024,9 @@ int Create(struct supertype *st, char *mddev,
 	 * it could be in conflict with already existing device
 	 * e.g. container, array
 	 */
-	if (strncmp(chosen_name, "/dev/md/", 8) == 0 &&
-	    map_by_name(&map, chosen_name+8) != NULL) {
-		pr_err("Array name %s is in use already.\n",
-			chosen_name);
+	if (strncmp(chosen_name, DEV_MD_DIR, DEV_MD_DIR_LEN) == 0 &&
+	    map_by_name(&map, chosen_name + DEV_MD_DIR_LEN)) {
+		pr_err("Array name %s is in use already.\n", chosen_name);
 		close(mdfd);
 		map_unlock(&map);
 		udev_unblock();
