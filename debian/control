@@ -4,7 +4,6 @@ Priority: optional
 Maintainer: Daniel Baumann <daniel.baumann@progress-linux.org>
 Build-Depends:
  debhelper-compat (= 13),
- groff-base,
  libudev-dev,
 Rules-Requires-Root: no
 Standards-Version: 4.6.2
