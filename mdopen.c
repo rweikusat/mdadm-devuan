@@ -188,12 +188,12 @@ int create_mddev(char *dev, char *name, int autof, int trustworthy,
 	parts = autof >> 3;
 	autof &= 7;
 
-	strcpy(chosen, "/dev/md/");
+	strcpy(chosen, DEV_MD_DIR);
 	cname = chosen + strlen(chosen);
 
 	if (dev) {
-		if (strncmp(dev, "/dev/md/", 8) == 0) {
-			strcpy(cname, dev+8);
+		if (strncmp(dev, DEV_MD_DIR, DEV_MD_DIR_LEN) == 0) {
+			strcpy(cname, dev + DEV_MD_DIR_LEN);
 		} else if (strncmp(dev, "/dev/", 5) == 0) {
 			char *e = dev + strlen(dev);
 			while (e > dev && isdigit(e[-1]))
@@ -370,6 +370,7 @@ int create_mddev(char *dev, char *name, int autof, int trustworthy,
 		}
 		if (block_udev)
 			udev_block(devnm);
+		create_named_array(devnm);
 	}
 
 	sprintf(devname, "/dev/%s", devnm);
@@ -411,11 +412,11 @@ int create_mddev(char *dev, char *name, int autof, int trustworthy,
 			make_parts(devname, parts);
 
 		if (strcmp(chosen, devname) != 0) {
-			if (mkdir("/dev/md",0700) == 0) {
-				if (chown("/dev/md", ci->uid, ci->gid))
-					perror("chown /dev/md");
-				if (chmod("/dev/md", ci->mode| ((ci->mode>>2) & 0111)))
-					perror("chmod /dev/md");
+			if (mkdir(DEV_NUM_PREF, 0700) == 0) {
+				if (chown(DEV_NUM_PREF, ci->uid, ci->gid))
+					perror("chown " DEV_NUM_PREF);
+				if (chmod(DEV_NUM_PREF, ci->mode | ((ci->mode >> 2) & 0111)))
+					perror("chmod " DEV_NUM_PREF);
 			}
 
 			if (dev && strcmp(chosen, dev) == 0)
