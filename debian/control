@@ -6,7 +6,7 @@ Build-Depends:
  debhelper-compat (= 13),
  libudev-dev,
 Rules-Requires-Root: no
-Standards-Version: 4.6.2
+Standards-Version: 4.7.0
 Homepage: https://raid.wiki.kernel.org
 Vcs-Browser: https://git.progress-linux.org/users/daniel.baumann/debian/packages/mdadm
 Vcs-Git: https://git.progress-linux.org/users/daniel.baumann/debian/packages/mdadm
