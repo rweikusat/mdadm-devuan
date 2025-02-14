@@ -1,16 +1,6 @@
 Author: Dimitri John Ledkov <xnox@ubuntu.com>
 Description: Randomize md array check timers (LP: #1815201).
 
-diff -Naurp mdadm.orig/systemd/mdcheck_continue.service mdadm/systemd/mdcheck_continue.service
---- mdadm.orig/systemd/mdcheck_continue.service
-+++ mdadm/systemd/mdcheck_continue.service
-@@ -13,6 +13,4 @@ Documentation=man:mdadm(8)
- [Service]
- Type=oneshot
- Environment="MDADM_CHECK_DURATION=6 hours"
--EnvironmentFile=-/run/sysconfig/mdadm
--ExecStartPre=-/usr/lib/mdadm/mdadm_env.sh
- ExecStart=/usr/share/mdadm/mdcheck --continue --duration ${MDADM_CHECK_DURATION}
 diff -Naurp mdadm.orig/systemd/mdcheck_continue.timer mdadm/systemd/mdcheck_continue.timer
 --- mdadm.orig/systemd/mdcheck_continue.timer
 +++ mdadm/systemd/mdcheck_continue.timer
@@ -25,16 +15,6 @@ diff -Naurp mdadm.orig/systemd/mdcheck_continue.timer mdadm/systemd/mdcheck_cont
  
  [Install]
  WantedBy= mdmonitor.service
-diff -Naurp mdadm.orig/systemd/mdcheck_start.service mdadm/systemd/mdcheck_start.service
---- mdadm.orig/systemd/mdcheck_start.service
-+++ mdadm/systemd/mdcheck_start.service
-@@ -13,6 +13,4 @@ Documentation=man:mdadm(8)
- [Service]
- Type=oneshot
- Environment="MDADM_CHECK_DURATION=6 hours"
--EnvironmentFile=-/run/sysconfig/mdadm
--ExecStartPre=-/usr/lib/mdadm/mdadm_env.sh
- ExecStart=/usr/share/mdadm/mdcheck --duration ${MDADM_CHECK_DURATION}
 diff -Naurp mdadm.orig/systemd/mdcheck_start.timer mdadm/systemd/mdcheck_start.timer
 --- mdadm.orig/systemd/mdcheck_start.timer
 +++ mdadm/systemd/mdcheck_start.timer
