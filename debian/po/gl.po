@@ -1,6 +1,6 @@
-# Galician translation of mdadm's debconf templates
+# Galician debconf translation of mdadm
+# Copyright (C) 2007-2008 Jacobo Tarrio <jtarrio@debian.org>
 # This file is distributed under the same license as the mdadm package.
-# Jacobo Tarrio <jtarrio@debian.org>, 2007, 2008.
 #
 msgid ""
 msgstr ""

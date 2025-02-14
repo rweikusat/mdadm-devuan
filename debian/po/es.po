@@ -1,40 +1,8 @@
-# mdadm po-debconf translation to spanish
-# Copyright (C) 2006 Software in the Public Interest, SPI Inc.
+# Spanish debconf translation of mdadm
+# Copyright (C) 2006 Javier Fernández-Sanguino
+# Copyright (C) Fernando Cerezal
+# Copyright (C) 2020 Jonatan Porras <jonatanpc8@gmail.com>
 # This file is distributed under the same license as the mdadm package.
-#
-# Changes:
-# - Initial translation
-#       Javier Fernández-Sanguino , 2006
-# - Revision
-#       Fernando Cerezal
-# - Updates:
-#		Jonatan Porras <jonatanpc8@gmail.com>, 2020
-#
-#  Traductores, si no conoce el formato PO, merece la pena leer la
-#  documentación de gettext, especialmente las secciones dedicadas a este
-#  formato, por ejemplo ejecutando:
-#         info -n '(gettext)PO Files'
-#         info -n '(gettext)Header Entry'
-#
-# Equipo de traducción al español, por favor lean antes de traducir
-# los siguientes documentos:
-#
-# - El proyecto de traducción de Debian al español
-#   http://www.debian.org/intl/spanish/
-#   especialmente las notas y normas de traducción en
-#   http://www.debian.org/intl/spanish/notas
-#
-# - La guía de traducción de po's de debconf:
-#   /usr/share/doc/po-debconf/README-trans
-#   o http://www.debian.org/intl/l10n/po-debconf/README-trans
-#
-# Si tiene dudas o consultas sobre esta traducción consulte con el último
-# traductor (campo Last-Translator) y ponga en copia a la lista de
-# traducción de Debian al español (<debian-l10n-spanish@lists.debian.org>)
-#
-# Notas:
-# - 'array' no está traducido aán. La traducción como 'arreglo' suena
-#   fatal (y es poco conocida) [ cambiar cuando se cambie en d-i ]
 #
 msgid ""
 msgstr ""

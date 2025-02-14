@@ -1,8 +1,7 @@
-# mdadm debconf templates basque translation
-# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the PACKAGE package.
-# Inaki Larranaga Murgoitio <dooteo@zundan.com>, 2020.
-# Piarres Beobide <pi@beobide.net>, 2008.
+# Basque debconf translation of mdadm
+# Copyright (C) 2008 Piarres Beobide <pi@beobide.net>
+# Copyright (C) 2020 Inaki Larranaga Murgoitio <dooteo@zundan.com>
+# This file is distributed under the same license as the mdadm package.
 #
 msgid ""
 msgstr ""

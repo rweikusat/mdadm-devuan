@@ -1,7 +1,6 @@
-# Danish translation mdadm.
-# Copyright (C) 2011 mdadm & nedenstående oversættere.
+# Danish debconf translation of mdadm
+# Copyright (C) 2011 Joe Hansen <joedalton2@yahoo.dk>
 # This file is distributed under the same license as the mdadm package.
-# Joe Hansen <joedalton2@yahoo.dk>, 2011.
 #
 msgid ""
 msgstr ""

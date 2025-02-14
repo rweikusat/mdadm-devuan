@@ -1,15 +1,7 @@
-# translation of mdadm_2.6.7-3_sv.po to Swedish
-# Translators, if you are not familiar with the PO format, gettext
-# documentation is worth reading, especially sections dedicated to
-# this format, e.g. by running:
-# info -n '(gettext)PO Files'
-# info -n '(gettext)Header Entry'
-# Some information specific to po-debconf are available at
-# /usr/share/doc/po-debconf/README-trans
-# or http://www.debian.org/intl/l10n/po-debconf/README-trans
-# Developers do not need to manually edit POT or PO files.
+# Swedish debconf translation of mdadm
+# Copyright (C) 2008 Martin Ågren <martin.agren@gmail.com>
+# This file is distributed under the same license as the mdadm package.
 #
-# Martin Ågren <martin.agren@gmail.com>, 2008.
 msgid ""
 msgstr ""
 "Project-Id-Version: mdadm_2.6.7-3_sv\n"
@@ -22,7 +14,6 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: KBabel 1.11.4\n"
 "Plural-Forms:  nplurals=2; plural=(n != 1);\n"
 
 #. Type: boolean

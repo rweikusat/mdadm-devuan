@@ -1,9 +1,6 @@
-# Slovak translations for mdadm package
-# Slovenské preklady pre balík mdadm.
-# Copyright (C) 2011 THE mdadm'S COPYRIGHT HOLDER
+# Slovak debconf translation of mdadm
+# Copyright (C) 2011-2020 Slavko <linux@slavino.sk>
 # This file is distributed under the same license as the mdadm package.
-# Automatically generated, 2011.
-# Slavko <linux@slavino.sk>, 2011-2020.
 #
 msgid ""
 msgstr ""
@@ -18,7 +15,6 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;\n"
-"X-Generator: Geany / PoHelper 1.36\n"
 
 #. Type: boolean
 #. Description

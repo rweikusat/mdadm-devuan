@@ -1,15 +1,6 @@
-#
-#    Translators, if you are not familiar with the PO format, gettext
-#    documentation is worth reading, especially sections dedicated to
-#    this format, e.g. by running:
-#         info -n '(gettext)PO Files'
-#         info -n '(gettext)Header Entry'
-#
-#    Some information specific to po-debconf are available at
-#            /usr/share/doc/po-debconf/README-trans
-#         or http://www.debian.org/intl/l10n/po-debconf/README-trans
-#
-#    Developers do not need to manually edit POT or PO files.
+# Czech debconf translation of mdadm
+# Copyright (C) 2020 Miroslav Kure <kurem@debian.cz>
+# This file is distributed under the same license as the mdadm package.
 #
 msgid ""
 msgstr ""
