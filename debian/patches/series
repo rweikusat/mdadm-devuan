@@ -5,5 +5,4 @@ exit-gracefully-when-md-device-not-found.patch
 sha1-includes.diff
 readlink-path.patch
 debian-no-Werror.diff
-debian-conffile-location.diff
 test-installed.patch
