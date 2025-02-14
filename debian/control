@@ -4,31 +4,32 @@ Priority: optional
 Maintainer: Daniel Baumann <daniel.baumann@progress-linux.org>
 Build-Depends:
  debhelper-compat (= 13),
- libudev-dev,
  groff-base,
- po-debconf
-Standards-Version: 4.6.2
+ libudev-dev,
+ po-debconf,
 Rules-Requires-Root: no
+Standards-Version: 4.6.2
+Homepage: https://raid.wiki.kernel.org
 Vcs-Browser: https://git.progress-linux.org/users/daniel.baumann/debian/packages/mdadm
 Vcs-Git: https://git.progress-linux.org/users/daniel.baumann/debian/packages/mdadm
-Homepage: https://raid.wiki.kernel.org
 
 Package: mdadm
+Section: admin
 Architecture: linux-any
 Pre-Depends:
- ${misc:Pre-Depends}
+ ${misc:Pre-Depends},
 Depends:
- ${misc:Depends},
- ${shlibs:Depends},
  debconf,
  lsb-base,
- udev
+ udev,
+ ${misc:Depends},
+ ${shlibs:Depends},
 Recommends:
+ kmod | module-init-tools,
  ${mta:Recommends},
- kmod | module-init-tools
 Suggests:
+ dracut-core,
  ${mta:Suggests},
- dracut-core
 Description: Tool to administer Linux MD arrays (software RAID)
  The mdadm utility can be used to create, manage, and monitor MD
  (multi-disk) arrays for software RAID or multipath I/O.
@@ -38,11 +39,11 @@ Description: Tool to administer Linux MD arrays (software RAID)
 
 Package: mdadm-udeb
 Section: debian-installer
-Package-Type: udeb
 Architecture: linux-any
+Package-Type: udeb
 Depends:
+ ${misc:Depends},
  ${shlibs:Depends},
- ${misc:Depends}
 Description: Tool to administer Linux MD arrays (software RAID)
  The mdadm utility can be used to create, manage, and monitor MD
  (multi-disk) arrays for software RAID or multipath I/O.
