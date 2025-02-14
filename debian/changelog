@@ -1,6 +1,5 @@
 mdadm (4.4-3) sid; urgency=medium
 
-  * Uploading to sid.
   * Adding updated German debconf translations from Helge Kreutzmann
     <debian@helgefjell.de> (Closes: #1094018).
 
@@ -8,7 +7,6 @@ mdadm (4.4-3) sid; urgency=medium
 
 mdadm (4.4-2) sid; urgency=medium
 
-  * Uploading to sid.
   * Removing readlink-path.patch, not needed anymore with usr-merge.
   * Extending note about non-systemd systems to not run maintenance tasks
     either (Closes: #1055994).
@@ -18,7 +16,6 @@ mdadm (4.4-2) sid; urgency=medium
 
 mdadm (4.4-1) sid; urgency=high
 
-  * Uploading to sid.
   * Merging upstream version 4.4.
   * Cherry-picking patch from upstream to update manpage about bitmaps
     being not default anymore (Closes: #1092137).
@@ -35,14 +32,12 @@ mdadm (4.3+20241202-1.1) sid; urgency=high
 
 mdadm (4.3+20241202-1) sid; urgency=medium
 
-  * Uploading to sid.
   * Merging upstream version 4.3+20241202.
 
  -- Daniel Baumann <daniel@debian.org>  Thu, 12 Dec 2024 18:22:26 +0100
 
 mdadm (4.3+20241108-1) sid; urgency=medium
 
-  * Uploading to sid.
   * Merging upstream version 4.3+20241108.
   * Removing mdmonitor-service-simplify.patch, not needed anymore.
   * Renumbering patches.
@@ -54,7 +49,6 @@ mdadm (4.3+20241108-1) sid; urgency=medium
 
 mdadm (4.3+20240723-2) sid; urgency=medium
 
-  * Uploading to sid.
   * Shortening dh_install override in rules.
   * Decluttering comments in rules file.
   * Adding slightly adjusted patch from Chris Hofstaedtler
@@ -65,14 +59,12 @@ mdadm (4.3+20240723-2) sid; urgency=medium
 
 mdadm (4.3+20240723-1) sid; urgency=medium
 
-  * Uploading to sid.
   * Merging upstream version 4.3+20240723.
 
  -- Daniel Baumann <daniel@debian.org>  Thu, 25 Jul 2024 08:17:15 +0200
 
 mdadm (4.3+20240412-1) sid; urgency=medium
 
-  * Uploading to sid.
   * Merging upstream version 4.3+20240412.
   * Updating to standards-version 4.7.0.
   * Updating mdadm docs.
@@ -83,7 +75,6 @@ mdadm (4.3+20240412-1) sid; urgency=medium
 
 mdadm (4.3-1) sid; urgency=medium
 
-  * Uploading to sid.
   * Merging upstream version 4.3.
   * Updating copyright for 2024.
 
@@ -91,7 +82,6 @@ mdadm (4.3-1) sid; urgency=medium
 
 mdadm (4.2+20240118-1) sid; urgency=medium
 
-  * Uploading to sid.
   * Merging upstream version 4.2+20240118.
   * Updating years in copyright for 2024.
 
@@ -99,7 +89,6 @@ mdadm (4.2+20240118-1) sid; urgency=medium
 
 mdadm (4.2+20231121-1) sid; urgency=medium
 
-  * Uploading to sid.
   * Merging upstream version 4.2+20231121.
   * Harmonizing license blurbs in copyright file.
   * Adding updated German debconf translations from Helge Kreutzmann
@@ -111,7 +100,6 @@ mdadm (4.2+20231121-1) sid; urgency=medium
 
 mdadm (4.2+20231026-1) sid; urgency=medium
 
-  * Uploading to sid.
   * Merging upstream version 4.2+20231026.
   * Refreshing fix-manpages.patch.
   * Refreshing no-Werror.patch.
@@ -120,14 +108,12 @@ mdadm (4.2+20231026-1) sid; urgency=medium
 
 mdadm (4.2+20230901-1) sid; urgency=medium
 
-  * Uploading to sid.
   * Merging upstream version 4.2+20230901.
 
  -- Daniel Baumann <daniel@debian.org>  Tue, 10 Oct 2023 10:48:43 +0200
 
 mdadm (4.2+20230508-7) sid; urgency=medium
 
-  * Uploading to sid.
   * Removing generated files to fix FTBFS when build twice in a row
     (Closes: #1047538).
 
@@ -135,7 +121,6 @@ mdadm (4.2+20230508-7) sid; urgency=medium
 
 mdadm (4.2+20230508-6) sid; urgency=medium
 
-  * Uploading to sid.
   * Adding updated Dutch debconf translations from Frans Spiesschaert
     <Frans.Spiesschaert@yucom.be> (Closes: #1041873).
 
@@ -143,7 +128,6 @@ mdadm (4.2+20230508-6) sid; urgency=medium
 
 mdadm (4.2+20230508-5) sid; urgency=medium
 
-  * Uploading to sid.
   * Updating package descriptions.
   * Adding updated Romanian debconf translations from Remus-Gabriel Chelu
     <remusgabriel.chelu@disroot.org> (Closes: #1039620).
@@ -152,14 +136,12 @@ mdadm (4.2+20230508-5) sid; urgency=medium
 
 mdadm (4.2+20230508-4) sid; urgency=medium
 
-  * Uploading to sid.
   * Updating watch file.
 
  -- Daniel Baumann <daniel@debian.org>  Sun, 25 Jun 2023 16:26:53 +0200
 
 mdadm (4.2+20230508-3) experimental; urgency=medium
 
-  * Uploading to experimental.
   * Updating regex in logcheck ignore patterns for kernels md tunining
     message (LP: #1176560).
   * Adding debconf note when run on non-systemd systems (Closes:
@@ -170,14 +152,12 @@ mdadm (4.2+20230508-3) experimental; urgency=medium
 
 mdadm (4.2+20230508-2) sid; urgency=medium
 
-  * Uploading to sid.
   * Uploading without changes after bookworm release.
 
  -- Daniel Baumann <daniel@debian.org>  Sun, 11 Jun 2023 14:32:19 +0200
 
 mdadm (4.2+20230508-1) experimental; urgency=medium
 
-  * Uploading to experimental.
   * Merging upstream version 4.2+20230508.
   * Refreshing and updating readlink-path.patch to cover basename too.
   * Refreshing randomize-timers.patch.
@@ -186,14 +166,12 @@ mdadm (4.2+20230508-1) experimental; urgency=medium
 
 mdadm (4.2+20230313-1) experimental; urgency=medium
 
-  * Uploading to experimental.
   * Merging upstream version 4.2+20230313.
 
  -- Daniel Baumann <daniel@debian.org>  Mon, 13 Mar 2023 17:55:55 +0100
 
 mdadm (4.2+20230304-1) experimental; urgency=medium
 
-  * Uploading to experimental.
   * Merging upstream version 4.2+20230304.
   * Adding initial Romanian debconf translations from Remus-Gabriel Chelu
     <remusgabriel.chelu@disroot.org> (Closes: #1032713).
@@ -202,7 +180,6 @@ mdadm (4.2+20230304-1) experimental; urgency=medium
 
 mdadm (4.2+20230302-1) experimental; urgency=medium
 
-  * Uploading to experimental.
   * Merging upstream version 4.2+20230302.
   * Updating host-name-in-default-mailfrom.patch for new upstream.
   * Updating exit-gracefully-when-md-device-not-found.patch for new
@@ -212,7 +189,6 @@ mdadm (4.2+20230302-1) experimental; urgency=medium
 
 mdadm (4.2+20230227-1) experimental; urgency=medium
 
-  * Uploading to experimental.
   * Merging upstream version 4.2+20230227.
   * Removing sysvinit scripts in favour of systemd units:
     - properly checkrestart mdmonitor (Closes: #815834).
@@ -232,7 +208,6 @@ mdadm (4.2+20230227-1) experimental; urgency=medium
 
 mdadm (4.2+20230223-2) experimental; urgency=medium
 
-  * Uploading to experimental.
   * Updating upstream contact in copyright.
   * Silencing mounting efivars in initramfs-hook by only mounting if not
     done already.
@@ -241,7 +216,6 @@ mdadm (4.2+20230223-2) experimental; urgency=medium
 
 mdadm (4.2+20230223-1) experimental; urgency=medium
 
-  * Uploading to experimental.
   * Merging upstream version 4.2+20230223.
   * Removing documentation-keys-in-service-files.patch, included upstream.
   * Removing fix-command-line-help.patch, included upstream.
@@ -293,7 +267,6 @@ mdadm (4.2+20230223-1) experimental; urgency=medium
 
 mdadm (4.2-5) sid; urgency=medium
 
-  * Uploading to sid.
   * Adopting package (Closes: #1009983).
 
  -- Daniel Baumann <daniel@debian.org>  Fri, 24 Feb 2023 15:37:15 +0100
