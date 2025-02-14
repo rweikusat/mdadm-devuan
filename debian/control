@@ -17,7 +17,6 @@ Architecture: linux-any
 Pre-Depends:
  ${misc:Pre-Depends},
 Depends:
- lsb-base,
  udev,
  ${misc:Depends},
  ${shlibs:Depends},
