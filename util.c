@@ -24,6 +24,8 @@
 
 #include	"mdadm.h"
 #include	"md_p.h"
+#include	"xmalloc.h"
+
 #include	<sys/socket.h>
 #include	<sys/utsname.h>
 #include	<sys/wait.h>
@@ -513,6 +515,9 @@ int enough(int level, int raid_disks, int layout, int clean, char *avail)
 	int i;
 	int avail_disks = 0;
 
+	if (raid_disks <= 0)
+		return 0;
+
 	for (i = 0; i < raid_disks; i++)
 		avail_disks += !!avail[i];
 
@@ -521,7 +526,7 @@ int enough(int level, int raid_disks, int layout, int clean, char *avail)
 		/* This is the tricky one - we need to check
 		 * which actual disks are present.
 		 */
-		copies = (layout&255)* ((layout>>8) & 255);
+		copies = (layout & 255) * ((layout >> 8) & 255);
 		first = 0;
 		do {
 			/* there must be one of the 'copies' form 'first' */
@@ -531,16 +536,16 @@ int enough(int level, int raid_disks, int layout, int clean, char *avail)
 			while (n--) {
 				if (avail[this])
 					cnt++;
-				this = (this+1) % raid_disks;
+				this = (this + 1) % raid_disks;
 			}
 			if (cnt == 0)
 				return 0;
-			first = (first+(layout&255)) % raid_disks;
+			first = (first + (layout & 255)) % raid_disks;
 		} while (first != 0);
 		return 1;
 
 	case LEVEL_MULTIPATH:
-		return avail_disks>= 1;
+		return avail_disks >= 1;
 	case LEVEL_LINEAR:
 	case 0:
 		return avail_disks == raid_disks;
@@ -556,12 +561,12 @@ int enough(int level, int raid_disks, int layout, int clean, char *avail)
 		/* FALL THROUGH */
 	case 5:
 		if (clean)
-			return avail_disks >= raid_disks-1;
+			return avail_disks >= raid_disks - 1;
 		else
 			return avail_disks >= raid_disks;
 	case 6:
 		if (clean)
-			return avail_disks >= raid_disks-2;
+			return avail_disks >= raid_disks - 2;
 		else
 			return avail_disks >= raid_disks;
 	default:
@@ -753,42 +758,6 @@ int ask(char *mesg)
 bad_option:
 	pr_err("bad option.\n");
 	return 0;
-}
-
-int is_standard(char *dev, int *nump)
-{
-	/* tests if dev is a "standard" md dev name.
-	 * i.e if the last component is "/dNN" or "/mdNN",
-	 * where NN is a string of digits
-	 * Returns 1 if a partitionable standard,
-	 *   -1 if non-partitonable,
-	 *   0 if not a standard name.
-	 */
-	char *d = strrchr(dev, '/');
-	int type = 0;
-	int num;
-	if (!d)
-		return 0;
-	if (strncmp(d, "/d",2) == 0)
-		d += 2, type = 1; /* /dev/md/dN{pM} */
-	else if (strncmp(d, "/md_d", 5) == 0)
-		d += 5, type = 1; /* /dev/md_dN{pM} */
-	else if (strncmp(d, "/md", 3) == 0)
-		d += 3, type = -1; /* /dev/mdN */
-	else if (d-dev > 3 && strncmp(d-2, "md/", 3) == 0)
-		d += 1, type = -1; /* /dev/md/N */
-	else
-		return 0;
-	if (!*d)
-		return 0;
-	num = atoi(d);
-	while (isdigit(*d))
-		d++;
-	if (*d)
-		return 0;
-	if (nump) *nump = num;
-
-	return type;
 }
 
 unsigned long calc_csum(void *super, int bytes)
@@ -1003,7 +972,7 @@ static bool is_devname_numbered(const char *devname, const char *pref, const int
 	if (parse_num(&val, devname + pref_len) != 0)
 		return false;
 
-	if (val > 127)
+	if (val > 1024)
 		return false;
 
 	return true;
@@ -1105,17 +1074,6 @@ int dev_open(char *dev, int flags)
 		if (mknod(devname, S_IFBLK|0600, makedev(major, minor)) == 0) {
 			fd = open(devname, flags);
 			unlink(devname);
-		}
-		if (fd < 0) {
-			/* Try /tmp as /dev appear to be read-only */
-			snprintf(devname, sizeof(devname),
-				 "/tmp/.tmp.md.%d:%d:%d",
-				 (int)getpid(), major, minor);
-			if (mknod(devname, S_IFBLK|0600,
-				  makedev(major, minor)) == 0) {
-				fd = open(devname, flags);
-				unlink(devname);
-			}
 		}
 	} else
 		fd = open(dev, flags);
@@ -1253,7 +1211,7 @@ struct supertype *super_by_fd(int fd, char **subarrayp)
 			*subarray++ = '\0';
 			subarray = xstrdup(subarray);
 		}
-		strcpy(container, dev);
+		snprintf(container, sizeof(container), "%s", dev);
 		sysfs_free(sra);
 		sra = sysfs_read(-1, container, GET_VERSION);
 		if (sra && sra->text_version[0])
@@ -1430,7 +1388,8 @@ static int get_gpt_last_partition_end(int fd, unsigned long long *endofpart)
 	/* skip protective MBR */
 	if (!get_dev_sector_size(fd, NULL, &sector_size))
 		return 0;
-	lseek(fd, sector_size, SEEK_SET);
+	if (lseek(fd, sector_size, SEEK_SET) == -1L)
+		return 0;
 	/* read GPT header */
 	if (read(fd, &gpt, 512) != 512)
 		return 0;
@@ -1451,7 +1410,8 @@ static int get_gpt_last_partition_end(int fd, unsigned long long *endofpart)
 	part = (struct GPT_part_entry *)buf;
 
 	/* set offset to third block (GPT entries) */
-	lseek(fd, sector_size*2, SEEK_SET);
+	if (lseek(fd, sector_size*2, SEEK_SET) == -1L)
+		return 0;
 	for (part_nr = 0; part_nr < all_partitions; part_nr++) {
 		/* read partition entry */
 		if (read(fd, buf, entry_size) != (ssize_t)entry_size)
@@ -1486,7 +1446,8 @@ static int get_last_partition_end(int fd, unsigned long long *endofpart)
 
 	BUILD_BUG_ON(sizeof(boot_sect) != 512);
 	/* read MBR */
-	lseek(fd, 0, 0);
+	if (lseek(fd, 0, 0) == -1L)
+		goto abort;
 	if (read(fd, &boot_sect, 512) != 512)
 		goto abort;
 
@@ -1671,16 +1632,6 @@ int metadata_subdev_matches(char *metadata, char *devnm)
 	return 0;
 }
 
-int is_container_member(struct mdstat_ent *mdstat, char *container)
-{
-	if (mdstat->metadata_version == NULL ||
-	    strncmp(mdstat->metadata_version, "external:", 9) != 0 ||
-	    !metadata_container_matches(mdstat->metadata_version+9, container))
-		return 0;
-
-	return 1;
-}
-
 int is_subarray_active(char *subarray, char *container)
 {
 	struct mdstat_ent *mdstat = mdstat_read(0, 0);
@@ -1725,7 +1676,7 @@ int open_subarray(char *dev, char *subarray, struct supertype *st, int quiet)
 			       dev);
 		goto close_fd;
 	}
-	strcpy(st->devnm, _devnm);
+	snprintf(st->devnm, sizeof(st->devnm), "%s", _devnm);
 
 	mdi = sysfs_read(fd, st->devnm, GET_VERSION|GET_LEVEL);
 	if (!mdi) {
@@ -1857,14 +1808,23 @@ int hot_remove_disk(int mdfd, unsigned long dev, int force)
 
 int sys_hot_remove_disk(int statefd, int force)
 {
+	static const char val[] = "remove";
 	int cnt = force ? 500 : 5;
-	int ret;
 
-	while ((ret = write(statefd, "remove", 6)) == -1 &&
-	       errno == EBUSY &&
-	       cnt-- > 0)
+	while (cnt--) {
+		int err = 0;
+		int ret = sysfs_write_descriptor(statefd, val, strlen(val), &err);
+
+		if (ret == MDADM_STATUS_SUCCESS)
+			return 0;
+
+		if (err != EBUSY)
+			break;
+
 		sleep_for(0, MSEC_TO_NSEC(10), true);
-	return ret == 6 ? 0 : -1;
+	}
+
+	return -1;
 }
 
 int set_array_info(int mdfd, struct supertype *st, struct mdinfo *info)
@@ -2303,14 +2263,16 @@ void manage_fork_fds(int close_all)
 {
 	DIR *dir;
 	struct dirent *dirent;
+	int fd = open("/dev/null", O_RDWR);
 
-	close(0);
-	open("/dev/null", O_RDWR);
-
+	if (is_fd_valid(fd)) {
+		dup2(fd, 0);
 #ifndef DEBUG
 	dup2(0, 1);
 	dup2(0, 2);
+	close_fd(&fd);
 #endif
+	}
 
 	if (close_all == 0)
 		return;
@@ -2329,8 +2291,10 @@ void manage_fork_fds(int close_all)
 
 		fd = strtol(dirent->d_name, NULL, 10);
 		if (fd > 2)
-			close(fd);
+			close_fd(&fd);
 	}
+	closedir(dir);
+	return;
 }
 
 /* In a systemd/udev world, it is best to get systemd to
@@ -2377,13 +2341,15 @@ void reopen_mddev(int mdfd)
 	/* Re-open without any O_EXCL, but keep
 	 * the same fd
 	 */
-	char *devnm;
-	int fd;
-	devnm = fd2devnm(mdfd);
-	close(mdfd);
-	fd = open_dev(devnm);
-	if (fd >= 0 && fd != mdfd)
-		dup2(fd, mdfd);
+	char *devnm = fd2devnm(mdfd);
+	int fd = open_dev(devnm);
+
+	if (!is_fd_valid(fd))
+		return;
+
+	dup2(fd, mdfd);
+
+	close_fd(&fd);
 }
 
 static struct cmap_hooks *cmap_hooks = NULL;

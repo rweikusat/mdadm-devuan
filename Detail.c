@@ -25,6 +25,8 @@
 #include	"mdadm.h"
 #include	"md_p.h"
 #include	"md_u.h"
+#include	"xmalloc.h"
+
 #include	<ctype.h>
 #include	<dirent.h>
 
@@ -549,16 +551,10 @@ int Detail(char *dev, struct context *c)
 		} else if (inactive && !is_container) {
 			printf("             State : inactive\n");
 		}
-		if (array.raid_disks)
-			printf("    Active Devices : %d\n", array.active_disks);
-		if (array.working_disks > 0)
-			printf("   Working Devices : %d\n",
-			       array.working_disks);
-		if (array.raid_disks) {
-			printf("    Failed Devices : %d\n", array.failed_disks);
-			if (!external)
-				printf("     Spare Devices : %d\n", array.spare_disks);
-		}
+		printf("    Active Devices : %d\n", array.active_disks);
+		printf("   Working Devices : %d\n", array.working_disks);
+		printf("    Failed Devices : %d\n", array.failed_disks);
+		printf("     Spare Devices : %d\n", array.spare_disks);
 		printf("\n");
 		if (array.level == 5) {
 			str = map_num(r5layout, array.layout);

@@ -23,6 +23,8 @@
  */
 
 #include	"mdadm.h"
+#include	"xmalloc.h"
+
 #include	<ctype.h>
 
 mapping_t assemble_statuses[] = {
@@ -114,14 +116,11 @@ static int is_member_busy(char *metadata_version)
 	int busy = 0;
 
 	for (ent = mdstat; ent; ent = ent->next) {
-		if (ent->metadata_version == NULL)
+		if (!is_mdstat_ent_subarray(ent))
 			continue;
-		if (strncmp(ent->metadata_version, "external:", 9) != 0)
-			continue;
-		if (!is_subarray(&ent->metadata_version[9]))
-			continue;
+
 		/* Skip first char - it can be '/' or '-' */
-		if (strcmp(&ent->metadata_version[10], metadata_version+1) == 0) {
+		if (strcmp(&ent->metadata_version[10], metadata_version + 1) == 0) {
 			busy = 1;
 			break;
 		}
@@ -1574,8 +1573,7 @@ try_again:
 			/* Ignore 'host:' prefix of name */
 			name = strchr(name, ':')+1;
 
-		mdfd = create_mddev(mddev, name, ident->autof, trustworthy,
-				    chosen_name, 0);
+		mdfd = create_mddev(mddev, name, trustworthy, chosen_name, 0);
 	}
 	if (mdfd < 0) {
 		st->ss->free_super(st);
