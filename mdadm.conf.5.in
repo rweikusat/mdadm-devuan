@@ -185,27 +185,6 @@ a group to another array in that group if the first array had a failed
 or missing drive but no spare.
 
 .TP
-.B auto=
-This option is rarely needed with mdadm-3.0, particularly if use with
-the Linux kernel v2.6.28 or later.
-It tells
-.I mdadm
-whether to use partitionable array or non-partitionable arrays and,
-in the absence of
-.IR udev ,
-how many partition devices to create.  From 2.6.28 all md array
-devices are partitionable, hence this option is not needed.
-
-The value of this option can be "yes" or "md" to indicate that a
-traditional, non-partitionable md array should be created, or "mdp",
-"part" or "partition" to indicate that a partitionable md array (only
-available in linux 2.6 and later) should be used.  This later set can
-also have a number appended to indicate how many partitions to create
-device files for, e.g.
-.BR auto=mdp5 .
-The default is 4.
-
-.TP
 .B bitmap=
 The option specifies a file in which a write-intent bitmap should be
 found.  When assembling the array,
@@ -314,17 +293,6 @@ defaults (root/wheel or root/disk).
 .B mode=
 An octal file mode such as 0660 can be given to override the default
 of 0600.
-.TP
-.B auto=
-This corresponds to the
-.B \-\-auto
-flag to mdadm.  Give
-.BR yes ,
-.BR md ,
-.BR mdp ,
-.B part
-\(em possibly followed by a number of partitions \(em to indicate how
-missing device entries should be created.
 
 .TP
 .B metadata=
@@ -333,7 +301,7 @@ This can be useful to impose a system-wide default of version-1 superblocks.
 
 .TP
 .B names=yes
-Since Linux 2.6.29 it has been possible to create
+It has been possible to create
 .B md
 devices with a name like
 .B md_home
@@ -506,8 +474,12 @@ of the new disk or if both arrays have the same
 .IR spare-group .
 
 To update hot plug configuration it is necessary to execute
-.B mdadm \-\-udev\-rules
-command after changing the config file
+.B mdadm \-\-udev\-rules\=<path_to_file>
+e.g.
+.B /etc/udev/rules.d/65-md-bare.rules
+command after changing the config file. And also run
+.B udevadm control \-\-reload
+otherwise, a reboot is needed.
 
 Keywords used in the
 .I POLICY
@@ -724,14 +696,6 @@ ARRAY /dev/md/home UUID=9187a482:5dde19d9:eea3cc4a:d646ab8b
 .br
            auto=part
 .br
-POLICY domain=domain1 metadata=imsm path=pci-0000:00:1f.2-scsi-*
-.br
-           action=spare
-.br
-POLICY domain=domain1 metadata=imsm path=pci-0000:04:00.0-scsi-[01]*
-.br
-           action=include
-.br
 # One domain comprising of devices attached to specified paths is defined.
 .br
 # Bare device matching first path will be made an imsm spare on hot plug.
@@ -741,6 +705,14 @@ POLICY domain=domain1 metadata=imsm path=pci-0000:04:00.0-scsi-[01]*
 # one of them becomes degraded, then any imsm spare matching any path for
 .br
 # given domain name can be migrated.
+.br
+POLICY domain=domain1 metadata=imsm path=pci-0000:00:1f.2-scsi-*
+.br
+           action=spare
+.br
+POLICY domain=domain1 metadata=imsm path=pci-0000:04:00.0-scsi-[01]*
+.br
+           action=include
 .br
 MAILADDR root@mydomain.tld
 .br

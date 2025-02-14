@@ -65,6 +65,7 @@
 
 #include	"mdadm.h"
 #include	"mdmon.h"
+#include	"xmalloc.h"
 
 char const Name[] = "mdmon";
 
@@ -198,8 +199,12 @@ static void try_kill_monitor(pid_t pid, char *devname, int sock)
 	/* Wait for monitor to exit by reading from the socket, after
 	 * clearing the non-blocking flag */
 	fl = fcntl(sock, F_GETFL, 0);
+	if (fl < 0)
+		return;
+
 	fl &= ~O_NONBLOCK;
-	fcntl(sock, F_SETFL, fl);
+	if (fcntl(sock, F_SETFL, fl) < 0)
+		return;
 	n = read(sock, buf, 100);
 
 	/* If there is I/O going on it might took some time to get to
@@ -249,7 +254,10 @@ static int make_control_sock(char *devname)
 	listen(sfd, 10);
 	fl = fcntl(sfd, F_GETFL, 0);
 	fl |= O_NONBLOCK;
-	fcntl(sfd, F_SETFL, fl);
+	if (fcntl(sfd, F_SETFL, fl) < 0) {
+		close_fd(&sfd);
+		return -1;
+	}
 	return sfd;
 }
 
@@ -394,9 +402,7 @@ int main(int argc, char *argv[])
 		/* launch an mdmon instance for each container found */
 		mdstat = mdstat_read(0, 0);
 		for (e = mdstat; e; e = e->next) {
-			if (e->metadata_version &&
-			    strncmp(e->metadata_version, "external:", 9) == 0 &&
-			    !is_subarray(&e->metadata_version[9])) {
+			if (is_mdstat_ent_external(e) && !is_mdstat_ent_subarray(e)) {
 				/* update cmdline so this mdmon instance can be
 				 * distinguished from others in a call to ps(1)
 				 */
@@ -451,22 +457,25 @@ static int mdmon(char *devnm, int must_fork, int takeover)
 	if (must_fork) {
 		if (pipe(pfd) != 0) {
 			pr_err("failed to create pipe\n");
+			close_fd(&mdfd);
 			return 1;
 		}
 		switch(fork()) {
 		case -1:
 			pr_err("failed to fork: %s\n", strerror(errno));
+			close_fd(&mdfd);
 			return 1;
 		case 0: /* child */
-			close(pfd[0]);
+			close_fd(&pfd[0]);
 			break;
 		default: /* parent */
-			close(pfd[1]);
+			close_fd(&pfd[1]);
 			if (read(pfd[0], &status, sizeof(status)) != sizeof(status)) {
 				wait(&status);
 				status = WEXITSTATUS(status);
 			}
-			close(pfd[0]);
+			close_fd(&pfd[0]);
+			close_fd(&mdfd);
 			return status;
 		}
 	} else
