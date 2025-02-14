@@ -1,3 +1,12 @@
+mdadm (4.4-1) sid; urgency=high
+
+  * Uploading to sid.
+  * Merging upstream version 4.4.
+  * Cherry-picking patch from upstream to update manpage about bitmaps
+    being not default anymore (Closes: #1092137).
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Tue, 14 Jan 2025 11:32:30 +0100
+
 mdadm (4.3+20241202-1.1) sid; urgency=high
 
   * Non-maintainer upload.
