@@ -38,7 +38,7 @@ Package-Type: udeb
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
-Description: tool for managing Linux md devices (software RAID arrays)
+Description: tool for managing Linux MD devices (software RAID)
  The mdadm tool is used to create, manage, and monitor Linux MD (software
  RAID) devices.
  .
