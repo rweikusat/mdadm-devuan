@@ -1,3 +1,15 @@
+mdadm (4.2+20231121-1) sid; urgency=medium
+
+  * Uploading to sid.
+  * Merging upstream version 4.2+20231121.
+  * Harmonizing license blurbs in copyright file.
+  * Adding updated German debconf translations from Helge Kreutzmann
+    <debian@helgefjell.de> (Closes: #1055789).
+  * Adding updated Swedish debconf translations from Martin Bagge
+    <brother@persilja.net> (Closes: #1057772).
+
+ -- Daniel Baumann <daniel.baumann@progress-linux.org>  Sun, 10 Dec 2023 11:57:19 +0100
+
 mdadm (4.2+20231026-1) sid; urgency=medium
 
   * Uploading to sid.
