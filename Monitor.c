@@ -32,6 +32,10 @@
 #include	<libudev.h>
 #endif
 
+#define TASK_COMM_LEN 16
+#define EVENT_NAME_MAX 32
+#define AUTOREBUILD_PID_PATH MDMON_DIR "/autorebuild.pid"
+
 struct state {
 	char devname[MD_NAME_MAX + sizeof("/dev/md/")];	/* length of "/dev/md/" + device name + terminating byte*/
 	char devnm[MD_NAME_MAX];	/* to sync with mdstat info */
@@ -58,26 +62,73 @@ struct state {
 };
 
 struct alert_info {
+	char hostname[HOST_NAME_MAX];
 	char *mailaddr;
 	char *mailfrom;
 	char *alert_cmd;
 	int dosyslog;
+	int test;
+} info;
+
+enum event {
+	EVENT_SPARE_ACTIVE = 0,
+	EVENT_NEW_ARRAY,
+	EVENT_MOVE_SPARE,
+	EVENT_TEST_MESSAGE,
+	__SYSLOG_PRIORITY_WARNING,
+	EVENT_REBUILD_STARTED,
+	EVENT_REBUILD,
+	EVENT_REBUILD_FINISHED,
+	EVENT_SPARES_MISSING,
+	__SYSLOG_PRIORITY_CRITICAL,
+	EVENT_DEVICE_DISAPPEARED,
+	EVENT_FAIL,
+	EVENT_FAIL_SPARE,
+	EVENT_DEGRADED_ARRAY,
+	EVENT_UNKNOWN
 };
-static int make_daemon(char *pidfile);
-static int check_one_sharer(int scan);
-static void write_autorebuild_pid(void);
-static void alert(const char *event, const char *dev, const char *disc, struct alert_info *info);
-static int check_array(struct state *st, struct mdstat_ent *mdstat,
-		       int test, struct alert_info *info,
-		       int increments, char *prefer);
-static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist,
-			  int test, struct alert_info *info);
-static void try_spare_migration(struct state *statelist, struct alert_info *info);
+
+mapping_t events_map[] = {
+	{"SpareActive", EVENT_SPARE_ACTIVE},
+	{"NewArray", EVENT_NEW_ARRAY},
+	{"MoveSpare", EVENT_MOVE_SPARE},
+	{"TestMessage", EVENT_TEST_MESSAGE},
+	{"RebuildStarted", EVENT_REBUILD_STARTED},
+	{"Rebuild", EVENT_REBUILD},
+	{"RebuildFinished", EVENT_REBUILD_FINISHED},
+	{"SparesMissing", EVENT_SPARES_MISSING},
+	{"DeviceDisappeared", EVENT_DEVICE_DISAPPEARED},
+	{"Fail", EVENT_FAIL},
+	{"FailSpare", EVENT_FAIL_SPARE},
+	{"DegradedArray", EVENT_DEGRADED_ARRAY},
+	{NULL, EVENT_UNKNOWN}
+};
+
+struct event_data {
+	enum event event_enum;
+	/*
+	 * @event_name: Rebuild event name must be in form "RebuildXX", where XX is rebuild progress.
+	 */
+	char event_name[EVENT_NAME_MAX];
+	char message[BUFSIZ];
+	const char *description;
+	const char *dev;
+	const char *disc;
+};
+
+static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist);
+static void try_spare_migration(struct state *statelist);
 static void link_containers_with_subarrays(struct state *list);
 static void free_statelist(struct state *statelist);
+static int check_array(struct state *st, struct mdstat_ent *mdstat, int increments, char *prefer);
+static int check_one_sharer(int scan);
 #ifndef NO_LIBUDEV
 static int check_udev_activity(void);
 #endif
+static void link_containers_with_subarrays(struct state *list);
+static int make_daemon(char *pidfile);
+static void try_spare_migration(struct state *statelist);
+static int write_autorebuild_pid(void);
 
 int Monitor(struct mddev_dev *devlist,
 	    char *mailaddr, char *alert_cmd,
@@ -132,7 +183,6 @@ int Monitor(struct mddev_dev *devlist,
 	int finished = 0;
 	struct mdstat_ent *mdstat = NULL;
 	char *mailfrom;
-	struct alert_info info;
 	struct mddev_ident *mdlist;
 	int delay_for_event = c->delay;
 
@@ -166,9 +216,16 @@ int Monitor(struct mddev_dev *devlist,
 	info.mailaddr = mailaddr;
 	info.mailfrom = mailfrom;
 	info.dosyslog = dosyslog;
+	info.test = c->test;
+
+	if (gethostname(info.hostname, sizeof(info.hostname)) != 0) {
+		pr_err("Cannot get hostname.\n");
+		return 1;
+	}
+	info.hostname[sizeof(info.hostname) - 1] = '\0';
 
 	if (share){
-		if (check_one_sharer(c->scan))
+		if (check_one_sharer(c->scan) == 2)
 			return 1;
 	}
 
@@ -179,7 +236,8 @@ int Monitor(struct mddev_dev *devlist,
 	}
 
 	if (share)
-		write_autorebuild_pid();
+		if (write_autorebuild_pid() != 0)
+			return 1;
 
 	if (devlist == NULL) {
 		mdlist = conf_get_ident(NULL);
@@ -241,8 +299,7 @@ int Monitor(struct mddev_dev *devlist,
 		mdstat = mdstat_read(oneshot ? 0 : 1, 0);
 
 		for (st = statelist; st; st = st->next) {
-			if (check_array(st, mdstat, c->test, &info,
-					increments, c->prefer))
+			if (check_array(st, mdstat, increments, c->prefer))
 				anydegraded = 1;
 			/* for external arrays, metadata is filled for
 			 * containers only
@@ -255,15 +312,14 @@ int Monitor(struct mddev_dev *devlist,
 
 		/* now check if there are any new devices found in mdstat */
 		if (c->scan)
-			new_found = add_new_arrays(mdstat, &statelist, c->test,
-						   &info);
+			new_found = add_new_arrays(mdstat, &statelist);
 
 		/* If an array has active < raid && spare == 0 && spare_group != NULL
 		 * Look for another array with spare > 0 and active == raid and same spare_group
 		 * if found, choose a device and hotremove/hotadd
 		 */
 		if (share && anydegraded)
-			try_spare_migration(statelist, &info);
+			try_spare_migration(statelist);
 		if (!new_found) {
 			if (oneshot)
 				break;
@@ -294,7 +350,7 @@ int Monitor(struct mddev_dev *devlist,
 				mdstat_close();
 			}
 		}
-		c->test = 0;
+		info.test = 0;
 
 		for (stp = &statelist; (st = *stp) != NULL; ) {
 			if (st->from_auto && st->err > 5) {
@@ -351,68 +407,190 @@ static int make_daemon(char *pidfile)
 	return -1;
 }
 
+/*
+ * check_one_sharer() - Checks for other mdmon processes running.
+ *
+ * Return:
+ * 0 - no other processes running,
+ * 1 - warning,
+ * 2 - error, or when scan mode is enabled, and one mdmon process already exists
+ */
 static int check_one_sharer(int scan)
 {
 	int pid;
-	FILE *comm_fp;
-	FILE *fp;
+	FILE *fp, *comm_fp;
 	char comm_path[PATH_MAX];
-	char path[PATH_MAX];
-	char comm[20];
+	char comm[TASK_COMM_LEN];
 
-	sprintf(path, "%s/autorebuild.pid", MDMON_DIR);
-	fp = fopen(path, "r");
-	if (fp) {
-		if (fscanf(fp, "%d", &pid) != 1)
-			pid = -1;
-		snprintf(comm_path, sizeof(comm_path),
-			 "/proc/%d/comm", pid);
-		comm_fp = fopen(comm_path, "r");
-		if (comm_fp) {
-			if (fscanf(comm_fp, "%19s", comm) &&
-			    strncmp(basename(comm), Name, strlen(Name)) == 0) {
-				if (scan) {
-					pr_err("Only one autorebuild process allowed in scan mode, aborting\n");
-					fclose(comm_fp);
-					fclose(fp);
-					return 1;
-				} else {
-					pr_err("Warning: One autorebuild process already running.\n");
-				}
-			}
-			fclose(comm_fp);
-		}
-		fclose(fp);
+	if (!is_directory(MDMON_DIR)) {
+		pr_err("%s is not a regular directory.\n", MDMON_DIR);
+		return 2;
 	}
+
+	if (access(AUTOREBUILD_PID_PATH, F_OK) != 0)
+		return 0;
+
+	if (!is_file(AUTOREBUILD_PID_PATH)) {
+		pr_err("%s is not a regular file.\n", AUTOREBUILD_PID_PATH);
+		return 2;
+	}
+
+	fp = fopen(AUTOREBUILD_PID_PATH, "r");
+	if (!fp) {
+		pr_err("Cannot open %s file.\n", AUTOREBUILD_PID_PATH);
+		return 2;
+	}
+
+	if (fscanf(fp, "%d", &pid) != 1) {
+		pr_err("Cannot read pid from %s file.\n", AUTOREBUILD_PID_PATH);
+		fclose(fp);
+		return 2;
+	}
+
+	snprintf(comm_path, sizeof(comm_path), "/proc/%d/comm", pid);
+
+	comm_fp = fopen(comm_path, "r");
+	if (!comm_fp) {
+		dprintf("Warning: Cannot open %s, continuing\n", comm_path);
+		fclose(fp);
+		return 1;
+	}
+
+	if (fscanf(comm_fp, "%15s", comm) == 0) {
+		dprintf("Warning: Cannot read comm from %s, continuing\n", comm_path);
+		fclose(comm_fp);
+		fclose(fp);
+		return 1;
+	}
+
+	if (strncmp(basename(comm), Name, strlen(Name)) == 0) {
+		if (scan) {
+			pr_err("Only one autorebuild process allowed in scan mode, aborting\n");
+			fclose(comm_fp);
+			fclose(fp);
+			return 2;
+		}
+		pr_err("Warning: One autorebuild process already running.\n");
+	}
+	fclose(comm_fp);
+	fclose(fp);
 	return 0;
 }
 
-static void write_autorebuild_pid()
+/*
+ * write_autorebuild_pid() - Writes pid to autorebuild.pid file.
+ *
+ * Return: 0 on success, 1 on error
+ */
+static int write_autorebuild_pid(void)
 {
-	char path[PATH_MAX];
-	int pid;
-	FILE *fp = NULL;
-	sprintf(path, "%s/autorebuild.pid", MDMON_DIR);
+	FILE *fp;
+	int fd;
 
 	if (mkdir(MDMON_DIR, 0700) < 0 && errno != EEXIST) {
-		pr_err("Can't create autorebuild.pid file\n");
-	} else {
-		int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0700);
-
-		if (fd >= 0)
-			fp = fdopen(fd, "w");
-
-		if (!fp)
-			pr_err("Can't create autorebuild.pid file\n");
-		else {
-			pid = getpid();
-			fprintf(fp, "%d\n", pid);
-			fclose(fp);
-		}
+		pr_err("%s: %s\n", strerror(errno), MDMON_DIR);
+		return 1;
 	}
+
+	if (!is_directory(MDMON_DIR)) {
+		pr_err("%s is not a regular directory.\n", MDMON_DIR);
+		return 1;
+	}
+
+	fd = open(AUTOREBUILD_PID_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0700);
+
+	if (fd < 0) {
+		pr_err("Error opening %s file.\n", AUTOREBUILD_PID_PATH);
+		return 1;
+	}
+
+	fp = fdopen(fd, "w");
+
+	if (!fp) {
+		pr_err("Error opening fd for %s file.\n", AUTOREBUILD_PID_PATH);
+		return 1;
+	}
+
+	fprintf(fp, "%d\n", getpid());
+
+	fclose(fp);
+	return 0;
 }
 
-static void execute_alert_cmd(const char *event, const char *dev, const char *disc, struct alert_info *info)
+#define BASE_MESSAGE "%s event detected on md device %s"
+#define COMPONENT_DEVICE_MESSAGE ", component device %s"
+#define DESCRIPTION_MESSAGE ": %s"
+/*
+ * sprint_event_message() - Writes basic message about detected event to destination ptr.
+ * @dest: message destination, should be at least the size of BUFSIZ
+ * @data: event data
+ *
+ * Return: 0 on success, 1 on error
+ */
+static int sprint_event_message(char *dest, const struct event_data *data)
+{
+	if (!dest || !data)
+		return 1;
+
+	if (data->disc && data->description)
+		snprintf(dest, BUFSIZ, BASE_MESSAGE COMPONENT_DEVICE_MESSAGE DESCRIPTION_MESSAGE,
+			 data->event_name, data->dev, data->disc, data->description);
+	else if (data->disc)
+		snprintf(dest, BUFSIZ, BASE_MESSAGE COMPONENT_DEVICE_MESSAGE,
+			 data->event_name, data->dev, data->disc);
+	else if (data->description)
+		snprintf(dest, BUFSIZ, BASE_MESSAGE DESCRIPTION_MESSAGE,
+			 data->event_name, data->dev, data->description);
+	else
+		snprintf(dest, BUFSIZ, BASE_MESSAGE, data->event_name, data->dev);
+
+	return 0;
+}
+
+/*
+ * get_syslog_event_priority() - Determines event priority.
+ * @event_enum: event to be checked
+ *
+ * Return: LOG_CRIT, LOG_WARNING or LOG_INFO
+ */
+static int get_syslog_event_priority(const enum event event_enum)
+{
+	if (event_enum > __SYSLOG_PRIORITY_CRITICAL)
+		return LOG_CRIT;
+	if (event_enum > __SYSLOG_PRIORITY_WARNING)
+		return LOG_WARNING;
+	return LOG_INFO;
+}
+
+/*
+ * is_email_event() - Determines whether email for event should be sent or not.
+ * @event_enum: event to be checked
+ *
+ * Return: true if email should be sent, false otherwise
+ */
+static bool is_email_event(const enum event event_enum)
+{
+	static const enum event email_events[] = {
+	EVENT_FAIL,
+	EVENT_FAIL_SPARE,
+	EVENT_DEGRADED_ARRAY,
+	EVENT_SPARES_MISSING,
+	EVENT_TEST_MESSAGE
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(email_events); ++i) {
+		if (event_enum == email_events[i])
+			return true;
+	}
+	return false;
+}
+
+/*
+ * execute_alert_cmd() - Forks and executes command provided as alert_cmd.
+ * @data: event data
+ */
+static void execute_alert_cmd(const struct event_data *data)
 {
 	int pid = fork();
 
@@ -424,15 +602,18 @@ static void execute_alert_cmd(const char *event, const char *dev, const char *di
 		pr_err("Cannot fork to execute alert command");
 		break;
 	case 0:
-		execl(info->alert_cmd, info->alert_cmd, event, dev, disc, NULL);
+		execl(info.alert_cmd, info.alert_cmd, data->event_name, data->dev, data->disc, NULL);
 		exit(2);
 	}
 }
 
-static void send_event_email(const char *event, const char *dev, const char *disc, struct alert_info *info)
+/*
+ * send_event_email() - Sends an email about event detected by monitor.
+ * @data: event data
+ */
+static void send_event_email(const struct event_data *data)
 {
 	FILE *mp, *mdstat;
-	char hname[256];
 	char buf[BUFSIZ];
 	int n;
 
@@ -442,22 +623,15 @@ static void send_event_email(const char *event, const char *dev, const char *dis
 		return;
 	}
 
-	gethostname(hname, sizeof(hname));
 	signal(SIGPIPE, SIG_IGN);
-	if (info->mailfrom)
-		fprintf(mp, "From: %s\n", info->mailfrom);
+	if (info.mailfrom)
+		fprintf(mp, "From: %s\n", info.mailfrom);
 	else
 		fprintf(mp, "From: %s monitoring <root>\n", Name);
-	fprintf(mp, "To: %s\n", info->mailaddr);
-	fprintf(mp, "Subject: %s event on %s:%s\n\n", event, dev, hname);
-	fprintf(mp, "This is an automatically generated mail message. \n");
-	fprintf(mp, "A %s event had been detected on md device %s.\n\n", event, dev);
-
-	if (disc && disc[0] != ' ')
-		fprintf(mp,
-			"It could be related to component device %s.\n\n", disc);
-	if (disc && disc[0] == ' ')
-		fprintf(mp, "Extra information:%s.\n\n", disc);
+	fprintf(mp, "To: %s\n", info.mailaddr);
+	fprintf(mp, "Subject: %s event on %s:%s\n\n", data->event_name, data->dev, info.hostname);
+	fprintf(mp, "This is an automatically generated mail message.\n");
+	fprintf(mp, "%s\n", data->message);
 
 	mdstat = fopen("/proc/mdstat", "r");
 	if (!mdstat) {
@@ -473,65 +647,70 @@ static void send_event_email(const char *event, const char *dev, const char *dis
 	pclose(mp);
 }
 
-static void log_event_to_syslog(const char *event, const char *dev, const char *disc)
+/*
+ * log_event_to_syslog() - Logs an event into syslog.
+ * @data: event data
+ */
+static void log_event_to_syslog(const struct event_data *data)
 {
 	int priority;
-	/* Log at a different severity depending on the event.
-	 *
-	 * These are the critical events:  */
-	if (strncmp(event, "Fail", 4) == 0 ||
-		strncmp(event, "Degrade", 7) == 0 ||
-		strncmp(event, "DeviceDisappeared", 17) == 0)
-		priority = LOG_CRIT;
-	/* Good to know about, but are not failures: */
-	else if (strncmp(event, "Rebuild", 7) == 0 ||
-			strncmp(event, "MoveSpare", 9) == 0 ||
-			strncmp(event, "Spares", 6) != 0)
-		priority = LOG_WARNING;
-	/* Everything else: */
-	else
-		priority = LOG_INFO;
 
-	if (disc && disc[0] != ' ')
-		syslog(priority,
-			"%s event detected on md device %s, component device %s", event, dev, disc);
-	else if (disc)
-		syslog(priority, "%s event detected on md device %s: %s", event, dev, disc);
-	else
-		syslog(priority, "%s event detected on md device %s", event, dev);
+	priority = get_syslog_event_priority(data->event_enum);
+
+	syslog(priority, "%s\n", data->message);
 }
 
-static void alert(const char *event, const char *dev, const char *disc, struct alert_info *info)
+/*
+ * alert() - Alerts about the monitor event.
+ * @event_enum: event to be sent
+ * @description: event description
+ * @progress: rebuild progress
+ * @dev: md device name
+ * @disc: component device
+ *
+ * If needed function executes alert command, sends an email or logs event to syslog.
+ */
+static void alert(const enum event event_enum, const char *description, const uint8_t progress,
+		  const char *dev, const char *disc)
 {
-	if (!info->alert_cmd && !info->mailaddr && !info->dosyslog) {
-		time_t now = time(0);
+	struct event_data data = {.dev = dev, .disc = disc, .description = description};
 
-		printf("%1.15s: %s on %s %s\n", ctime(&now) + 4,
-		       event, dev, disc?disc:"unknown device");
-	}
-	if (info->alert_cmd)
-		execute_alert_cmd(event, dev, disc, info);
+	if (!dev)
+		return;
 
-	if (info->mailaddr && (strncmp(event, "Fail", 4) == 0 ||
-			       strncmp(event, "Test", 4) == 0 ||
-			       strncmp(event, "Spares", 6) == 0 ||
-			       strncmp(event, "Degrade", 7) == 0)) {
-		send_event_email(event, dev, disc, info);
+	if (event_enum == EVENT_REBUILD) {
+		snprintf(data.event_name, sizeof(data.event_name), "%s%02d",
+			 map_num_s(events_map, EVENT_REBUILD), progress);
+	} else {
+		snprintf(data.event_name, sizeof(data.event_name), "%s", map_num_s(events_map, event_enum));
 	}
 
-	if (info->dosyslog)
-		log_event_to_syslog(event, dev, disc);
+	data.event_enum = event_enum;
+
+	if (sprint_event_message(data.message, &data) != 0) {
+		pr_err("Cannot create event message.\n");
+		return;
+	}
+	pr_err("%s\n", data.message);
+
+	if (info.alert_cmd)
+		execute_alert_cmd(&data);
+
+	if (info.mailaddr && is_email_event(event_enum))
+		send_event_email(&data);
+
+	if (info.dosyslog)
+		log_event_to_syslog(&data);
 }
 
 static int check_array(struct state *st, struct mdstat_ent *mdstat,
-		       int test, struct alert_info *ainfo,
 		       int increments, char *prefer)
 {
 	/* Update the state 'st' to reflect any changes shown in mdstat,
 	 * or found by directly examining the array, and return
 	 * '1' if the array is degraded, or '0' if it is optimal (or dead).
 	 */
-	struct { int state, major, minor; } info[MAX_DISKS];
+	struct { int state, major, minor; } disks_info[MAX_DISKS];
 	struct mdinfo *sra = NULL;
 	mdu_array_info_t array;
 	struct mdstat_ent *mse = NULL, *mse2;
@@ -545,8 +724,8 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 	int is_container = 0;
 	unsigned long redundancy_only_flags = 0;
 
-	if (test)
-		alert("TestMessage", dev, NULL, ainfo);
+	if (info.test)
+		alert(EVENT_TEST_MESSAGE, NULL, 0, dev, NULL);
 
 	retval = 0;
 
@@ -595,7 +774,7 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 	 */
 	if (sra->array.level == 0 || sra->array.level == -1) {
 		if (!st->err && !st->from_config)
-			alert("DeviceDisappeared", dev, " Wrong-Level", ainfo);
+			alert(EVENT_DEVICE_DISAPPEARED, "Wrong-Level", 0, dev, NULL);
 		st->err++;
 		goto out;
 	}
@@ -612,7 +791,7 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 		st->percent = RESYNC_NONE;
 		new_array = 1;
 		if (!is_container)
-			alert("NewArray", st->devname, NULL, ainfo);
+			alert(EVENT_NEW_ARRAY, NULL, 0, st->devname, NULL);
 	}
 
 	if (st->utime == array.utime && st->failed == sra->array.failed_disks &&
@@ -625,29 +804,20 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 	}
 	if (st->utime == 0 && /* new array */
 	    mse->pattern && strchr(mse->pattern, '_') /* degraded */)
-		alert("DegradedArray", dev, NULL, ainfo);
+		alert(EVENT_DEGRADED_ARRAY, NULL, 0, dev, NULL);
 
 	if (st->utime == 0 && /* new array */ st->expected_spares > 0 &&
 	    sra->array.spare_disks < st->expected_spares)
-		alert("SparesMissing", dev, NULL, ainfo);
+		alert(EVENT_SPARES_MISSING, NULL, 0, dev, NULL);
 	if (st->percent < 0 && st->percent != RESYNC_UNKNOWN &&
 	    mse->percent >= 0)
-		alert("RebuildStarted", dev, NULL, ainfo);
+		alert(EVENT_REBUILD_STARTED, NULL, 0, dev, NULL);
 	if (st->percent >= 0 && mse->percent >= 0 &&
 	    (mse->percent / increments) > (st->percent / increments)) {
-		char percentalert[18];
-		/*
-		 * "RebuildNN" (10 chars) or "RebuildStarted" (15 chars)
-		 */
-
 		if((mse->percent / increments) == 0)
-			snprintf(percentalert, sizeof(percentalert),
-				 "RebuildStarted");
+			alert(EVENT_REBUILD_STARTED, NULL, 0, dev, NULL);
 		else
-			snprintf(percentalert, sizeof(percentalert),
-				 "Rebuild%02d", mse->percent);
-
-		alert(percentalert, dev, NULL, ainfo);
+			alert(EVENT_REBUILD, NULL, mse->percent, dev, NULL);
 	}
 
 	if (mse->percent == RESYNC_NONE && st->percent >= 0) {
@@ -660,9 +830,9 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 			snprintf(cnt, sizeof(cnt),
 				 " mismatches found: %d (on raid level %d)",
 				 sra->mismatch_cnt, sra->array.level);
-			alert("RebuildFinished", dev, cnt, ainfo);
+			alert(EVENT_REBUILD_FINISHED, NULL, 0, dev, cnt);
 		} else
-			alert("RebuildFinished", dev, NULL, ainfo);
+			alert(EVENT_REBUILD_FINISHED, NULL, 0, dev, NULL);
 	}
 	st->percent = mse->percent;
 
@@ -671,13 +841,13 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 		mdu_disk_info_t disc;
 		disc.number = i;
 		if (md_get_disk_info(fd, &disc) >= 0) {
-			info[i].state = disc.state;
-			info[i].major = disc.major;
-			info[i].minor = disc.minor;
+			disks_info[i].state = disc.state;
+			disks_info[i].major = disc.major;
+			disks_info[i].minor = disc.minor;
 			if (disc.major || disc.minor)
 				remaining_disks --;
 		} else
-			info[i].major = info[i].minor = 0;
+			disks_info[i].major = disks_info[i].minor = 0;
 	}
 	last_disk = i;
 
@@ -700,13 +870,13 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 		int change;
 		char *dv = NULL;
 		disc.number = i;
-		if (i < last_disk && (info[i].major || info[i].minor)) {
-			newstate = info[i].state;
-			dv = map_dev_preferred(info[i].major, info[i].minor, 1,
+		if (i < last_disk && (disks_info[i].major || disks_info[i].minor)) {
+			newstate = disks_info[i].state;
+			dv = map_dev_preferred(disks_info[i].major, disks_info[i].minor, 1,
 					       prefer);
 			disc.state = newstate;
-			disc.major = info[i].major;
-			disc.minor = info[i].minor;
+			disc.major = disks_info[i].major;
+			disc.minor = disks_info[i].minor;
 		} else
 			newstate = (1 << MD_DISK_REMOVED);
 
@@ -716,14 +886,14 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 		change = newstate ^ st->devstate[i];
 		if (st->utime && change && !st->err && !new_array) {
 			if ((st->devstate[i]&change) & (1 << MD_DISK_SYNC))
-				alert("Fail", dev, dv, ainfo);
+				alert(EVENT_FAIL, NULL, 0, dev, dv);
 			else if ((newstate & (1 << MD_DISK_FAULTY)) &&
 				 (disc.major || disc.minor) &&
 				 st->devid[i] == makedev(disc.major,
 							 disc.minor))
-				alert("FailSpare", dev, dv, ainfo);
+				alert(EVENT_FAIL_SPARE, NULL, 0, dev, dv);
 			else if ((newstate&change) & (1 << MD_DISK_SYNC))
-				alert("SpareActive", dev, dv, ainfo);
+				alert(EVENT_SPARE_ACTIVE, NULL, 0, dev, dv);
 		}
 		st->devstate[i] = newstate;
 		st->devid[i] = makedev(disc.major, disc.minor);
@@ -747,13 +917,12 @@ static int check_array(struct state *st, struct mdstat_ent *mdstat,
 
  disappeared:
 	if (!st->err && !is_container)
-		alert("DeviceDisappeared", dev, NULL, ainfo);
+		alert(EVENT_DEVICE_DISAPPEARED, NULL, 0, dev, NULL);
 	st->err++;
 	goto out;
 }
 
-static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist,
-			  int test, struct alert_info *info)
+static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist)
 {
 	struct mdstat_ent *mse;
 	int new_found = 0;
@@ -806,8 +975,8 @@ static int add_new_arrays(struct mdstat_ent *mdstat, struct state **statelist,
 			} else
 				st->parent_devnm[0] = 0;
 			*statelist = st;
-			if (test)
-				alert("TestMessage", st->devname, NULL, info);
+			if (info.test)
+				alert(EVENT_TEST_MESSAGE, NULL, 0, st->devname, NULL);
 			new_found = 1;
 		}
 	return new_found;
@@ -971,7 +1140,7 @@ static dev_t container_choose_spare(struct state *from, struct state *to,
 	return dev;
 }
 
-static void try_spare_migration(struct state *statelist, struct alert_info *info)
+static void try_spare_migration(struct state *statelist)
 {
 	struct state *from;
 	struct state *st;
@@ -1030,8 +1199,7 @@ static void try_spare_migration(struct state *statelist, struct alert_info *info
 				if (devid > 0 &&
 				    move_spare(from->devname, to->devname,
 					       devid)) {
-					alert("MoveSpare", to->devname,
-					      from->devname, info);
+					alert(EVENT_MOVE_SPARE, NULL, 0, to->devname, from->devname);
 					break;
 				}
 			}
