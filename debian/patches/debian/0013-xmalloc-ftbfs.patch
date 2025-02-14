@@ -1,0 +1,15 @@
+Author: Daniel Baumann <daniel.baumann@progress-linux.org>
+Description: Adding missing header to fix FTBFS.
+
+diff -Naurp mdadm.orig/raid6check.c mdadm/raid6check.c
+--- mdadm.orig/raid6check.c
++++ mdadm/raid6check.c
+@@ -23,6 +23,8 @@
+  */
+ 
+ #include "mdadm.h"
++#include "xmalloc.h"
++
+ #include <stdint.h>
+ #include <sys/mman.h>
+ 
