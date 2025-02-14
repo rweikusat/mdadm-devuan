@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: mdadm
-Upstream-Contact: Neil Brown <neilb@suse.de>
+Upstream-Contact: Jes Sorensen <jes@trained-monkey.org>
 Source: https://www.kernel.org/pub/linux/utils/raid/mdadm/
 
 Files: *
