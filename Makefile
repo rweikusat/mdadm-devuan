@@ -160,7 +160,7 @@ SRCS =  $(patsubst %.o,%.c,$(OBJS))
 
 INCL = mdadm.h part.h bitmap.h
 
-MON_OBJS = mdmon.o monitor.o managemon.o uuid.o util.o maps.o mdstat.o sysfs.o \
+MON_OBJS = mdmon.o monitor.o managemon.o uuid.o util.o maps.o mdstat.o sysfs.o config.o mapfile.o mdopen.o\
 	policy.o lib.o \
 	Kill.o sg_io.o dlink.o ReadMe.o super-intel.o \
 	super-mbr.o super-gpt.o \
@@ -182,9 +182,9 @@ check_rundir:
 		echo "***** or set CHECK_RUN_DIR=0"; exit 1; \
 	fi
 
-everything: all mdadm.static swap_super test_stripe raid6check \
+everything: all swap_super test_stripe raid6check \
 	mdadm.Os mdadm.O2 man
-everything-test: all mdadm.static swap_super test_stripe \
+everything-test: all swap_super test_stripe \
 	mdadm.Os mdadm.O2 man
 # mdadm.uclibc doesn't work on x86-64
 # mdadm.tcc doesn't work..
@@ -227,7 +227,12 @@ raid6check : raid6check.o mdadm.h $(CHECK_OBJS)
 
 mdadm.8 : mdadm.8.in
 	sed -e 's/{DEFAULT_METADATA}/$(DEFAULT_METADATA)/g' \
-	-e 's,{MAP_PATH},$(MAP_PATH),g'  mdadm.8.in > mdadm.8
+	-e 's,{MAP_PATH},$(MAP_PATH),g' -e 's,{CONFFILE},$(CONFFILE),g' \
+	-e 's,{CONFFILE2},$(CONFFILE2),g'  mdadm.8.in > mdadm.8
+
+mdadm.conf.5 : mdadm.conf.5.in
+	sed -e 's,{CONFFILE},$(CONFFILE),g' \
+	-e 's,{CONFFILE2},$(CONFFILE2),g'  mdadm.conf.5.in > mdadm.conf.5
 
 mdadm.man : mdadm.8
 	man -l mdadm.8 > mdadm.man

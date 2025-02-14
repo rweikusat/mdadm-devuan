@@ -81,11 +81,12 @@ char Version[] = "mdadm - v" VERSION " - " VERS_DATE EXTRAVERSION "\n";
  *     found, it is started.
  */
 
-char short_options[]="-ABCDEFGIQhVXYWZ:vqbc:i:l:p:m:r:n:x:u:c:d:z:U:N:safRSow1tye:k";
+char short_options[]="-ABCDEFGIQhVXYWZ:vqbc:i:l:p:m:n:x:u:c:d:z:U:N:sarfRSow1tye:k:";
+char short_monitor_options[]="-ABCDEFGIQhVXYWZ:vqbc:i:l:p:m:r:n:x:u:c:d:z:U:N:safRSow1tye:k:";
 char short_bitmap_options[]=
-		"-ABCDEFGIQhVXYWZ:vqb:c:i:l:p:m:r:n:x:u:c:d:z:U:N:sarfRSow1tye:k:";
+		"-ABCDEFGIQhVXYWZ:vqb:c:i:l:p:m:n:x:u:c:d:z:U:N:sarfRSow1tye:k:";
 char short_bitmap_auto_options[]=
-		"-ABCDEFGIQhVXYWZ:vqb:c:i:l:p:m:r:n:x:u:c:d:z:U:N:sa:rfRSow1tye:k:";
+		"-ABCDEFGIQhVXYWZ:vqb:c:i:l:p:m:n:x:u:c:d:z:U:N:sa:rfRSow1tye:k:";
 
 struct option long_options[] = {
     {"manage",    0, 0, ManageOpt},
@@ -146,7 +147,6 @@ struct option long_options[] = {
     {"nofailfast",0, 0,  NoFailFast},
     {"re-add",    0, 0,  ReAdd},
     {"homehost",  1, 0,  HomeHost},
-    {"symlinks",  1, 0,  Symlinks},
     {"data-offset",1, 0, DataOffset},
     {"nodes",1, 0, Nodes}, /* also for --assemble */
     {"home-cluster",1, 0, ClusterName},
@@ -477,7 +477,7 @@ char Help_assemble[] =
 ;
 
 char Help_manage[] =
-"Usage: mdadm arraydevice options component devices...\n"
+"Usage: mdadm [mode] arraydevice [options] <component devices...>\n"
 "\n"
 "This usage is for managing the component devices within an array.\n"
 "The --manage option is not needed and is assumed if the first argument\n"
@@ -613,7 +613,6 @@ char Help_incr[] =
 ;
 
 char Help_config[] =
-"The /etc/mdadm.conf config file:\n\n"
 " The config file contains, apart from blank lines and comment lines that\n"
 " start with a hash(#), array lines, device lines, and various\n"
 " configuration lines.\n"
@@ -636,10 +635,12 @@ char Help_config[] =
 " than a device must match all of them to be considered.\n"
 "\n"
 " Other configuration lines include:\n"
-"  mailaddr, mailfrom, program     used for --monitor mode\n"
-"  create, auto                    used when creating device names in /dev\n"
-"  homehost, policy, part-policy   used to guide policy in various\n"
-"                                  situations\n"
+"  mailaddr, mailfrom, program, monitordelay    used for --monitor mode\n"
+"  create, auto                                 used when creating device names in /dev\n"
+"  homehost, homecluster, policy, part-policy   used to guide policy in various\n"
+"                                               situations\n"
+"\n"
+"For more details see mdadm.conf(5).\n"
 "\n"
 ;
 
@@ -654,3 +655,34 @@ char *mode_help[mode_count] = {
 	[GROW]		= Help_grow,
 	[INCREMENTAL]	= Help_incr,
 };
+
+/**
+ * fprint_update_options() - Print valid update options depending on the mode.
+ * @outf: File (output stream)
+ * @update_mode: Used to distinguish update and update_subarray
+ */
+void fprint_update_options(FILE *outf, enum update_opt update_mode)
+{
+	int counter = UOPT_NAME, breakpoint = UOPT_HELP;
+	mapping_t *map = update_options;
+
+	if (!outf)
+		return;
+	if (update_mode == UOPT_SUBARRAY_ONLY) {
+		breakpoint = UOPT_SUBARRAY_ONLY;
+		fprintf(outf, "Valid --update options for update-subarray are:\n\t");
+	} else
+		fprintf(outf, "Valid --update options are:\n\t");
+	while (map->num) {
+		if (map->num >= breakpoint)
+			break;
+		fprintf(outf, "'%s', ", map->name);
+		if (counter % 5 == 0)
+			fprintf(outf, "\n\t");
+		counter++;
+		map++;
+	}
+	if ((counter - 1) % 5)
+		fprintf(outf, "\n");
+	fprintf(outf, "\r");
+}

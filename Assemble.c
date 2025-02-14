@@ -63,7 +63,7 @@ static void set_array_assembly_status(struct context *c,
 				   struct assembly_array_info *arr)
 {
 	int raid_disks = arr->preexist_cnt + arr->new_cnt;
-	char *status_msg = map_num(assemble_statuses, status);
+	char *status_msg = map_num_s(assemble_statuses, status);
 
 	if (c->export && result)
 		*result |= status;
@@ -77,9 +77,7 @@ static void set_array_assembly_status(struct context *c,
 		fprintf(stderr, " (%d new)", arr->new_cnt);
 	if (arr->exp_cnt)
 		fprintf(stderr, " ( + %d for expansion)", arr->exp_cnt);
-	if (status_msg)
-		fprintf(stderr, " %s", status_msg);
-	fprintf(stderr, ".\n");
+	fprintf(stderr, " %s.\n", status_msg);
 }
 
 static int name_matches(char *found, char *required, char *homehost, int require_homehost)
@@ -137,17 +135,17 @@ static int ident_matches(struct mddev_ident *ident,
 			 struct mdinfo *content,
 			 struct supertype *tst,
 			 char *homehost, int require_homehost,
-			 char *update, char *devname)
+			 enum update_opt update, char *devname)
 {
 
-	if (ident->uuid_set && (!update || strcmp(update, "uuid")!= 0) &&
+	if (ident->uuid_set && update != UOPT_UUID &&
 	    same_uuid(content->uuid, ident->uuid, tst->ss->swapuuid)==0 &&
 	    memcmp(content->uuid, uuid_zero, sizeof(int[4])) != 0) {
 		if (devname)
 			pr_err("%s has wrong uuid.\n", devname);
 		return 0;
 	}
-	if (ident->name[0] && (!update || strcmp(update, "name")!= 0) &&
+	if (ident->name[0] && update != UOPT_NAME &&
 	    name_matches(content->name, ident->name, homehost, require_homehost)==0) {
 		if (devname)
 			pr_err("%s has wrong name.\n", devname);
@@ -650,11 +648,10 @@ static int load_devices(struct devs *devices, char *devmap,
 			int err;
 			fstat(mdfd, &stb2);
 
-			if (strcmp(c->update, "uuid") == 0 && !ident->uuid_set)
+			if (c->update == UOPT_UUID && !ident->uuid_set)
 				random_uuid((__u8 *)ident->uuid);
 
-			if (strcmp(c->update, "ppl") == 0 &&
-			    ident->bitmap_fd >= 0) {
+			if (c->update == UOPT_PPL && ident->bitmap_fd >= 0) {
 				pr_err("PPL is not compatible with bitmap\n");
 				close(mdfd);
 				free(devices);
@@ -686,30 +683,30 @@ static int load_devices(struct devs *devices, char *devmap,
 			strcpy(content->name, ident->name);
 			content->array.md_minor = minor(stb2.st_rdev);
 
-			if (strcmp(c->update, "byteorder") == 0)
+			if (c->update == UOPT_BYTEORDER)
 				err = 0;
-			else if (strcmp(c->update, "home-cluster") == 0) {
+			else if (c->update == UOPT_HOME_CLUSTER) {
 				tst->cluster_name = c->homecluster;
 				err = tst->ss->write_bitmap(tst, dfd, NameUpdate);
-			} else if (strcmp(c->update, "nodes") == 0) {
+			} else if (c->update == UOPT_NODES) {
 				tst->nodes = c->nodes;
 				err = tst->ss->write_bitmap(tst, dfd, NodeNumUpdate);
-			} else if (strcmp(c->update, "revert-reshape") == 0 &&
-				   c->invalid_backup)
+			} else if (c->update == UOPT_REVERT_RESHAPE && c->invalid_backup)
 				err = tst->ss->update_super(tst, content,
-							    "revert-reshape-nobackup",
+							    UOPT_SPEC_REVERT_RESHAPE_NOBACKUP,
 							    devname, c->verbose,
 							    ident->uuid_set,
 							    c->homehost);
 			else
-				err = tst->ss->update_super(tst, content, c->update,
+				err = tst->ss->update_super(tst, content,
+							    c->update,
 							    devname, c->verbose,
 							    ident->uuid_set,
 							    c->homehost);
 			if (err < 0) {
 				if (err == -1)
 					pr_err("--update=%s not understood for %s metadata\n",
-					       c->update, tst->ss->name);
+					       map_num(update_options, c->update), tst->ss->name);
 				tst->ss->free_super(tst);
 				free(tst);
 				close(mdfd);
@@ -719,7 +716,7 @@ static int load_devices(struct devs *devices, char *devmap,
 				*stp = st;
 				return -1;
 			}
-			if (strcmp(c->update, "uuid")==0 &&
+			if (c->update == UOPT_UUID &&
 			    !ident->uuid_set) {
 				ident->uuid_set = 1;
 				memcpy(ident->uuid, content->uuid, 16);
@@ -728,7 +725,7 @@ static int load_devices(struct devs *devices, char *devmap,
 				pr_err("Could not re-write superblock on %s.\n",
 				       devname);
 
-			if (strcmp(c->update, "uuid")==0 &&
+			if (c->update == UOPT_UUID &&
 			    ident->bitmap_fd >= 0 && !bitmap_done) {
 				if (bitmap_update_uuid(ident->bitmap_fd,
 						       content->uuid,
@@ -908,8 +905,7 @@ static int force_array(struct mdinfo *content,
 				 * devices in RAID4 or last devices in RAID4/5/6.
 				 */
 				delta = devices[j].i.delta_disks;
-				if (devices[j].i.array.level >= 4 &&
-				    devices[j].i.array.level <= 6 &&
+				if (is_level456(devices[j].i.array.level) &&
 				    i/2 >= content->array.raid_disks - delta)
 					/* OK */;
 				else if (devices[j].i.array.level == 4 &&
@@ -963,7 +959,7 @@ static int force_array(struct mdinfo *content,
 			continue;
 		}
 		content->events = devices[most_recent].i.events;
-		tst->ss->update_super(tst, content, "force-one",
+		tst->ss->update_super(tst, content, UOPT_SPEC_FORCE_ONE,
 				      devices[chosen_drive].devname, c->verbose,
 				      0, NULL);
 
@@ -1123,7 +1119,7 @@ static int start_array(int mdfd,
 			       i/2, mddev);
 	}
 
-	if (content->array.level == LEVEL_CONTAINER) {
+	if (is_container(content->array.level)) {
 		sysfs_rules_apply(mddev, content);
 		if (c->verbose >= 0) {
 			pr_err("Container %s has been assembled with %d drive%s",
@@ -1187,8 +1183,7 @@ static int start_array(int mdfd,
 				pr_err("%s: Need a backup file to complete reshape of this array.\n",
 				       mddev);
 				pr_err("Please provided one with \"--backup-file=...\"\n");
-				if (c->update &&
-				    strcmp(c->update, "revert-reshape") == 0)
+				if (c->update == UOPT_REVERT_RESHAPE)
 					pr_err("(Don't specify --update=revert-reshape again, that part succeeded.)\n");
 				return 1;
 			}
@@ -1228,8 +1223,7 @@ static int start_array(int mdfd,
 				fprintf(stderr, ".\n");
 			}
 			if (content->reshape_active &&
-			    content->array.level >= 4 &&
-			    content->array.level <= 6) {
+			    is_level456(content->array.level)) {
 				/* might need to increase the size
 				 * of the stripe cache - default is 256
 				 */
@@ -1487,7 +1481,7 @@ try_again:
 	 */
 	if (map_lock(&map))
 		pr_err("failed to get exclusive lock on mapfile - continue anyway...\n");
-	if (c->update && strcmp(c->update,"uuid") == 0)
+	if (c->update == UOPT_UUID)
 		mp = NULL;
 	else
 		mp = map_by_uuid(&map, content->uuid);
@@ -1553,8 +1547,7 @@ try_again:
 			 */
 			trustworthy = LOCAL;
 
-		if (name[0] == 0 &&
-		    content->array.level == LEVEL_CONTAINER) {
+		if (!name[0] && is_container(content->array.level)) {
 			name = content->text_version;
 			trustworthy = METADATA;
 		}
@@ -1635,7 +1628,7 @@ try_again:
 		goto out;
 	}
 
-	if (c->update && strcmp(c->update, "byteorder")==0)
+	if (c->update == UOPT_BYTEORDER)
 		st->minor_version = 90;
 
 	st->ss->getinfo_super(st, content, NULL);
@@ -1793,7 +1786,7 @@ try_again:
 		if (!(devices[j].i.array.state & 1))
 			clean = 0;
 
-		if (st->ss->update_super(st, &devices[j].i, "assemble", NULL,
+		if (st->ss->update_super(st, &devices[j].i, UOPT_SPEC_ASSEMBLE, NULL,
 					 c->verbose, 0, NULL)) {
 			if (c->force) {
 				if (c->verbose >= 0)
@@ -1813,11 +1806,10 @@ try_again:
 		}
 #endif
 	}
-	if (c->force && !clean &&
+	if (c->force && !clean && !is_container(content->array.level) &&
 	    !enough(content->array.level, content->array.raid_disks,
-		    content->array.layout, clean,
-		    avail)) {
-		change += st->ss->update_super(st, content, "force-array",
+		    content->array.layout, clean, avail)) {
+		change += st->ss->update_super(st, content, UOPT_SPEC_FORCE_ARRAY,
 					       devices[chosen_drive].devname, c->verbose,
 					       0, NULL);
 		was_forced = 1;
@@ -1904,7 +1896,7 @@ try_again:
 	/* First, fill in the map, so that udev can find our name
 	 * as soon as we become active.
 	 */
-	if (c->update && strcmp(c->update, "metadata")==0) {
+	if (c->update == UOPT_METADATA) {
 		content->array.major_version = 1;
 		content->array.minor_version = 0;
 		strcpy(content->text_version, "1.0");
@@ -1951,7 +1943,7 @@ out:
 						break;
 					close(mdfd);
 				}
-				usleep(usecs);
+				sleep_for(0, USEC_TO_NSEC(usecs), true);
 				usecs <<= 1;
 			}
 		}
@@ -1976,7 +1968,8 @@ int assemble_container_content(struct supertype *st, int mdfd,
 	int start_reshape;
 	char *avail;
 	int err;
-	int is_raid456, is_clean, all_disks;
+	int is_clean, all_disks;
+	bool is_raid456;
 
 	if (sysfs_init(content, mdfd, NULL)) {
 		pr_err("Unable to initialize sysfs\n");
@@ -1984,7 +1977,12 @@ int assemble_container_content(struct supertype *st, int mdfd,
 	}
 
 	sra = sysfs_read(mdfd, NULL, GET_VERSION|GET_DEVS);
-	if (sra == NULL || strcmp(sra->text_version, content->text_version) != 0) {
+	if (sra == NULL) {
+		pr_err("Failed to read sysfs parameters\n");
+		return 1;
+	}
+
+	if (strcmp(sra->text_version, content->text_version) != 0) {
 		if (content->array.major_version == -1 &&
 		    content->array.minor_version == -2 &&
 		    c->readonly &&
@@ -2104,7 +2102,7 @@ int assemble_container_content(struct supertype *st, int mdfd,
 		content->array.state |= 1;
 	}
 
-	is_raid456 = (content->array.level >= 4 && content->array.level <= 6);
+	is_raid456 = is_level456(content->array.level);
 	is_clean = content->array.state & 1;
 
 	if (enough(content->array.level, content->array.raid_disks,

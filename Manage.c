@@ -244,7 +244,7 @@ int Manage_stop(char *devname, int fd, int verbose, int will_retry)
 					    "array_state",
 					    "inactive")) < 0 &&
 		       errno == EBUSY) {
-			usleep(200000);
+			sleep_for(0, MSEC_TO_NSEC(200), true);
 			count--;
 		}
 		if (err) {
@@ -307,7 +307,7 @@ int Manage_stop(char *devname, int fd, int verbose, int will_retry)
 	 *  - unfreeze reshape
 	 *  - wait on 'sync_completed' for that point to be reached.
 	 */
-	if (mdi && (mdi->array.level >= 4 && mdi->array.level <= 6) &&
+	if (mdi && is_level456(mdi->array.level) &&
 	    sysfs_attribute_available(mdi, NULL, "sync_action") &&
 	    sysfs_attribute_available(mdi, NULL, "reshape_direction") &&
 	    sysfs_get_str(mdi, NULL, "sync_action", buf, 20) > 0 &&
@@ -328,7 +328,7 @@ int Manage_stop(char *devname, int fd, int verbose, int will_retry)
 		       sysfs_get_ll(mdi, NULL, "sync_max", &old_sync_max) == 0) {
 			/* must be in the critical section - wait a bit */
 			delay -= 1;
-			usleep(100000);
+			sleep_for(0, MSEC_TO_NSEC(100), true);
 		}
 
 		if (sysfs_set_str(mdi, NULL, "sync_action", "frozen") != 0)
@@ -405,7 +405,7 @@ int Manage_stop(char *devname, int fd, int verbose, int will_retry)
 				 * quite started yet.  Wait a bit and
 				 * check  'sync_action' to see.
 				 */
-				usleep(10000);
+				sleep_for(0, MSEC_TO_NSEC(10), true);
 				sysfs_get_str(mdi, NULL, "sync_action", buf, sizeof(buf));
 				if (strncmp(buf, "reshape", 7) != 0)
 					break;
@@ -447,7 +447,7 @@ done:
 	count = 25; err = 0;
 	while (count && fd >= 0 &&
 	       (err = ioctl(fd, STOP_ARRAY, NULL)) < 0 && errno == EBUSY) {
-		usleep(200000);
+		sleep_for(0, MSEC_TO_NSEC(200), true);
 		count --;
 	}
 	if (fd >= 0 && err) {
@@ -598,9 +598,8 @@ static void add_set(struct mddev_dev *dv, int fd, char set_char)
 
 int attempt_re_add(int fd, int tfd, struct mddev_dev *dv,
 		   struct supertype *dev_st, struct supertype *tst,
-		   unsigned long rdev,
-		   char *update, char *devname, int verbose,
-		   mdu_array_info_t *array)
+		   unsigned long rdev, enum update_opt update,
+		   char *devname, int verbose, mdu_array_info_t *array)
 {
 	struct mdinfo mdi;
 	int duuid[4];
@@ -666,19 +665,19 @@ int attempt_re_add(int fd, int tfd, struct mddev_dev *dv,
 
 			if (dv->writemostly == FlagSet)
 				rv = dev_st->ss->update_super(
-					dev_st, NULL, "writemostly",
+					dev_st, NULL, UOPT_SPEC_WRITEMOSTLY,
 					devname, verbose, 0, NULL);
 			if (dv->writemostly == FlagClear)
 				rv = dev_st->ss->update_super(
-					dev_st, NULL, "readwrite",
+					dev_st, NULL, UOPT_SPEC_READWRITE,
 					devname, verbose, 0, NULL);
 			if (dv->failfast == FlagSet)
 				rv = dev_st->ss->update_super(
-					dev_st, NULL, "failfast",
+					dev_st, NULL, UOPT_SPEC_FAILFAST,
 					devname, verbose, 0, NULL);
 			if (dv->failfast == FlagClear)
 				rv = dev_st->ss->update_super(
-					dev_st, NULL, "nofailfast",
+					dev_st, NULL, UOPT_SPEC_NOFAILFAST,
 					devname, verbose, 0, NULL);
 			if (update)
 				rv = dev_st->ss->update_super(
@@ -714,8 +713,8 @@ skip_re_add:
 int Manage_add(int fd, int tfd, struct mddev_dev *dv,
 	       struct supertype *tst, mdu_array_info_t *array,
 	       int force, int verbose, char *devname,
-	       char *update, unsigned long rdev, unsigned long long array_size,
-	       int raid_slot)
+	       enum update_opt update, unsigned long rdev,
+	       unsigned long long array_size, int raid_slot)
 {
 	unsigned long long ldsize;
 	struct supertype *dev_st;
@@ -1105,7 +1104,7 @@ int Manage_remove(struct supertype *tst, int fd, struct mddev_dev *dv,
 				ret = sysfs_unique_holder(devnm, rdev);
 				if (ret < 2)
 					break;
-				usleep(100 * 1000);	/* 100ms */
+				sleep_for(0, MSEC_TO_NSEC(100), true);
 			} while (--count > 0);
 
 			if (ret == 0) {
@@ -1285,38 +1284,97 @@ int Manage_with(struct supertype *tst, int fd, struct mddev_dev *dv,
 	return -1;
 }
 
+/**
+ * is_remove_safe() - Check if remove is safe.
+ * @array: Array info.
+ * @fd: Array file descriptor.
+ * @devname: Name of device to remove.
+ * @verbose: Verbose.
+ *
+ * The function determines if array will be operational
+ * after removing &devname.
+ *
+ * Return: True if array will be operational, false otherwise.
+ */
+bool is_remove_safe(mdu_array_info_t *array, const int fd, char *devname, const int verbose)
+{
+	dev_t devid = devnm2devid(devname + 5);
+	struct mdinfo *mdi = sysfs_read(fd, NULL, GET_DEVS | GET_DISKS | GET_STATE);
+
+	if (!mdi) {
+		if (verbose)
+			pr_err("Failed to read sysfs attributes for %s\n", devname);
+		return false;
+	}
+
+	char *avail = xcalloc(array->raid_disks, sizeof(char));
+
+	for (mdi = mdi->devs; mdi; mdi = mdi->next) {
+		if (mdi->disk.raid_disk < 0)
+			continue;
+		if (!(mdi->disk.state & (1 << MD_DISK_SYNC)))
+			continue;
+		if (makedev(mdi->disk.major, mdi->disk.minor) == devid)
+			continue;
+		avail[mdi->disk.raid_disk] = 1;
+	}
+	sysfs_free(mdi);
+
+	bool is_enough = enough(array->level, array->raid_disks,
+				array->layout, 1, avail);
+
+	free(avail);
+	return is_enough;
+}
+
+/**
+ * Manage_subdevs() - Execute operation depending on devmode.
+ *
+ * @devname: name of the device.
+ * @fd: file descriptor.
+ * @devlist: list of sub-devices to manage.
+ * @verbose: verbose level.
+ * @test: test flag.
+ * @update: type of update.
+ * @force: force flag.
+ *
+ * This function executes operation defined by devmode
+ * for each dev from devlist.
+ * Devmode can be:
+ * 'a' - add the device
+ * 'S' - add the device as a spare - don't try re-add
+ * 'j' - add the device as a journal device
+ * 'A' - re-add the device
+ * 'r' - remove the device: HOT_REMOVE_DISK
+ *       device can be 'faulty' or 'detached' in which case all
+ *       matching devices are removed.
+ * 'f' - set the device faulty SET_DISK_FAULTY
+ *       device can be 'detached' in which case any device that
+ *       is inaccessible will be marked faulty.
+ * 'I' - remove device by using incremental fail
+ *       which is executed when device is removed surprisingly.
+ * 'R' - mark this device as wanting replacement.
+ * 'W' - this device is added if necessary and activated as
+ *       a replacement for a previous 'R' device.
+ * -----
+ * 'w' - 'W' will be changed to 'w' when it is paired with
+ *       a 'R' device.  If a 'W' is found while walking the list
+ *       it must be unpaired, and is an error.
+ * 'M' - this is created by a 'missing' target.  It is a slight
+ *       variant on 'A'
+ * 'F' - Another variant of 'A', where the device was faulty
+ *       so must be removed from the array first.
+ * 'c' - confirm the device as found (for clustered environments)
+ *
+ * For 'f' and 'r', the device can also be a kernel-internal
+ * name such as 'sdb'.
+ *
+ * Return: 0 on success, otherwise 1 or 2.
+ */
 int Manage_subdevs(char *devname, int fd,
 		   struct mddev_dev *devlist, int verbose, int test,
-		   char *update, int force)
+		   enum update_opt update, int force)
 {
-	/* Do something to each dev.
-	 * devmode can be
-	 *  'a' - add the device
-	 *  'S' - add the device as a spare - don't try re-add
-	 *  'j' - add the device as a journal device
-	 *  'A' - re-add the device
-	 *  'r' - remove the device: HOT_REMOVE_DISK
-	 *        device can be 'faulty' or 'detached' in which case all
-	 *	  matching devices are removed.
-	 *  'f' - set the device faulty SET_DISK_FAULTY
-	 *        device can be 'detached' in which case any device that
-	 *	  is inaccessible will be marked faulty.
-	 *  'R' - mark this device as wanting replacement.
-	 *  'W' - this device is added if necessary and activated as
-	 *        a replacement for a previous 'R' device.
-	 * -----
-	 *  'w' - 'W' will be changed to 'w' when it is paired with
-	 *        a 'R' device.  If a 'W' is found while walking the list
-	 *        it must be unpaired, and is an error.
-	 *  'M' - this is created by a 'missing' target.  It is a slight
-	 *        variant on 'A'
-	 *  'F' - Another variant of 'A', where the device was faulty
-	 *        so must be removed from the array first.
-	 *  'c' - confirm the device as found (for clustered environments)
-	 *
-	 * For 'f' and 'r', the device can also be a kernel-internal
-	 * name such as 'sdb'.
-	 */
 	mdu_array_info_t array;
 	unsigned long long array_size;
 	struct mddev_dev *dv;
@@ -1452,8 +1510,9 @@ int Manage_subdevs(char *devname, int fd,
 			/* Assume this is a kernel-internal name like 'sda1' */
 			int found = 0;
 			char dname[55];
-			if (dv->disposition != 'r' && dv->disposition != 'f') {
-				pr_err("%s only meaningful with -r or -f, not -%c\n",
+			if (dv->disposition != 'r' && dv->disposition != 'f' &&
+			    dv->disposition != 'I') {
+				pr_err("%s only meaningful with -r, -f or -I, not -%c\n",
 					dv->devname, dv->disposition);
 				goto abort;
 			}
@@ -1598,7 +1657,14 @@ int Manage_subdevs(char *devname, int fd,
 			break;
 
 		case 'f': /* set faulty */
-			/* FIXME check current member */
+			if (!is_remove_safe(&array, fd, dv->devname, verbose)) {
+				pr_err("Cannot remove %s from %s, array will be failed.\n",
+				       dv->devname, devname);
+				if (sysfd >= 0)
+					close(sysfd);
+				goto abort;
+			}
+		case 'I': /* incremental fail */
 			if ((sysfd >= 0 && write(sysfd, "faulty", 6) != 6) ||
 			    (sysfd < 0 && ioctl(fd, SET_DISK_FAULTY,
 						rdev))) {
@@ -1675,10 +1741,13 @@ int autodetect(void)
 	return rv;
 }
 
-int Update_subarray(char *dev, char *subarray, char *update, struct mddev_ident *ident, int verbose)
+int Update_subarray(char *dev, char *subarray, enum update_opt update,
+		    struct mddev_ident *ident, int verbose)
 {
 	struct supertype supertype, *st = &supertype;
 	int fd, rv = 2;
+	struct mdinfo *info = NULL;
+	char *update_verb = map_num(update_options, update);
 
 	memset(st, 0, sizeof(*st));
 
@@ -1693,25 +1762,41 @@ int Update_subarray(char *dev, char *subarray, char *update, struct mddev_ident 
 		goto free_super;
 	}
 
+	if (is_subarray_active(subarray, st->devnm)) {
+		if (verbose >= 0)
+			pr_err("Subarray %s in %s is active, cannot update %s\n",
+				subarray, dev, update_verb);
+		goto free_super;
+	}
+
 	if (mdmon_running(st->devnm))
 		st->update_tail = &st->updates;
+
+	info = st->ss->container_content(st, subarray);
+
+	if (update == UOPT_PPL && !is_level456(info->array.level)) {
+		pr_err("RWH policy ppl is supported only for raid4, raid5 and raid6.\n");
+		goto free_super;
+	}
 
 	rv = st->ss->update_subarray(st, subarray, update, ident);
 
 	if (rv) {
 		if (verbose >= 0)
 			pr_err("Failed to update %s of subarray-%s in %s\n",
-				update, subarray, dev);
+				update_verb, subarray, dev);
 	} else if (st->update_tail)
 		flush_metadata_updates(st);
 	else
 		st->ss->sync_metadata(st);
 
-	if (rv == 0 && strcmp(update, "name") == 0 && verbose >= 0)
+	if (rv == 0 && update == UOPT_NAME && verbose >= 0)
 		pr_err("Updated subarray-%s name from %s, UUIDs may have changed\n",
 		       subarray, dev);
 
- free_super:
+free_super:
+	if (info)
+		free(info);
 	st->ss->free_super(st);
 	close(fd);
 
@@ -1746,10 +1831,10 @@ int move_spare(char *from_devname, char *to_devname, dev_t devid)
 	sprintf(devname, "%d:%d", major(devid), minor(devid));
 
 	devlist.disposition = 'r';
-	if (Manage_subdevs(from_devname, fd2, &devlist, -1, 0, NULL, 0) == 0) {
+	if (Manage_subdevs(from_devname, fd2, &devlist, -1, 0, UOPT_UNDEFINED, 0) == 0) {
 		devlist.disposition = 'a';
 		if (Manage_subdevs(to_devname, fd1, &devlist, -1, 0,
-				   NULL, 0) == 0) {
+				   UOPT_UNDEFINED, 0) == 0) {
 			/* make sure manager is aware of changes */
 			ping_manager(to_devname);
 			ping_manager(from_devname);
@@ -1759,7 +1844,7 @@ int move_spare(char *from_devname, char *to_devname, dev_t devid)
 		}
 		else
 			Manage_subdevs(from_devname, fd2, &devlist,
-				       -1, 0, NULL, 0);
+				       -1, 0, UOPT_UNDEFINED, 0);
 	}
 	close(fd1);
 	close(fd2);

@@ -10,6 +10,9 @@ devlist=
 
 savelogs=0
 exitonerror=1
+ctrl_c_error=0
+skipbroken=0
+loop=1
 prefix='[0-9][0-9]'
 
 # use loop devices by default if doesn't specify --dev
@@ -35,6 +38,7 @@ die() {
 
 ctrl_c() {
 	exitonerror=1
+	ctrl_c_error=1
 }
 
 # mdadm always adds --quiet, and we want to see any unexpected messages
@@ -79,8 +83,21 @@ mdadm() {
 do_test() {
 	_script=$1
 	_basename=`basename $_script`
+	_broken=0
+
 	if [ -f "$_script" ]
 	then
+		if [ -f "${_script}.broken" ]; then
+			_broken=1
+			_broken_msg=$(head -n1 "${_script}.broken" | tr -d '\n')
+			if [ "$skipbroken" == "all" ]; then
+				return
+			elif [ "$skipbroken" == "always" ] &&
+			     [[ "$_broken_msg" == *always* ]]; then
+				return
+			fi
+		fi
+
 		rm -f $targetdir/stderr
 		# this might have been reset: restore the default.
 		echo 2000 > /proc/sys/dev/raid/speed_limit_max
@@ -97,10 +114,15 @@ do_test() {
 		else
 			save_log fail
 			_fail=1
+			if [ "$_broken" == "1" ]; then
+				echo "  (KNOWN BROKEN TEST: $_broken_msg)"
+			fi
 		fi
 		[ "$savelogs" == "1" ] &&
 			mv -f $targetdir/log $logdir/$_basename.log
-		[ "$_fail" == "1" -a "$exitonerror" == "1" ] && exit 1
+		[ "$ctrl_c_error" == "1" ] && exit 1
+		[ "$_fail" == "1" -a "$exitonerror" == "1" \
+		  -a "$_broken" == "0" ] && exit 1
 	fi
 }
 
@@ -117,6 +139,9 @@ do_help() {
 		--logdir=directory          Directory to save all logfiles in
 		--save-logs                 Usually use with --logdir together
 		--keep-going | --no-error   Don't stop on error, ie. run all tests
+		--loop=N                    Run tests N times (0 to run forever)
+		--skip-broken               Skip tests that are known to be broken
+		--skip-always-broken        Skip tests that are known to always fail
 		--dev=loop|lvm|ram|disk     Use loop devices (default), LVM, RAM or disk
 		--disks=                    Provide a bunch of physical devices for test
 		--volgroup=name             LVM volume group for LVM test
@@ -211,6 +236,15 @@ parse_args() {
 		--keep-going | --no-error )
 			exitonerror=0
 			;;
+		--loop=* )
+			loop="${i##*=}"
+			;;
+		--skip-broken )
+			skipbroken=all
+			;;
+		--skip-always-broken )
+			skipbroken=always
+			;;
 		--disable-multipath )
 			unset MULTIPATH
 			;;
@@ -263,19 +297,30 @@ main() {
 	echo "Testing on linux-$(uname -r) kernel"
 	[ "$savelogs" == "1" ] &&
 		echo "Saving logs to $logdir"
-	if [ "x$TESTLIST" != "x" ]
-	then
-		for script in ${TESTLIST[@]}
-		do
-			do_test $testdir/$script
-		done
-	else
-		for script in $testdir/$prefix $testdir/$prefix*[^~]
-		do
-			do_test $script
-		done
-	fi
 
+	while true; do
+		if [ "x$TESTLIST" != "x" ]
+		then
+			for script in ${TESTLIST[@]}
+			do
+				do_test $testdir/$script
+			done
+		else
+			for script in $testdir/$prefix $testdir/$prefix*[^~]
+			do
+				case $script in
+				 *.broken) ;;
+				 *)
+				     do_test $script
+				 esac
+			done
+		fi
+
+		let loop=$loop-1
+		if [ "$loop" == "0" ]; then
+			break
+		fi
+	done
 	exit 0
 }
 
