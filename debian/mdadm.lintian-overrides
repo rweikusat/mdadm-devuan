@@ -2,4 +2,4 @@
 init.d-script-possible-missing-stop etc/init.d/mdadm-waitidle 1
 
 # mdadm forks mdmon as required, not sure it should start separately
-systemd-service-file-missing-install-key lib/systemd/system/mdmonitor.service
+systemd-service-file-missing-install-key usr/lib/systemd/system/mdmonitor.service
