@@ -2,7 +2,6 @@ debian/0001-fix-manpages.patch
 debian/0002-host-name-in-default-mailfrom.patch
 debian/0003-exit-gracefully-when-md-device-not-found.patch
 debian/0004-sha1-includes.patch
-debian/0005-readlink-path.patch
 debian/0006-no-Werror.patch
 debian/0007-test-installed.patch
 debian/0008-randomize-timers.patch
