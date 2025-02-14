@@ -1,7 +1,7 @@
 Source: mdadm
 Section: admin
 Priority: optional
-Maintainer: Daniel Baumann <daniel.baumann@progress-linux.org>
+Maintainer: Daniel Baumann <daniel@debian.org>
 Build-Depends:
  debhelper-compat (= 13),
  libudev-dev,
