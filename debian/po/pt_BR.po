@@ -1,17 +1,17 @@
 # Brazilian Portuguese debconf translation of mdadm
 # Copyright (C) Felipe Augusto van de Wiel (faw) <faw@cathedrallabs.org>
-# Copyright (C) Adriano Rafael Gomes <adrianorg@debian.org>
+# Copyright (C) 2020-2025 Adriano Rafael Gomes <adrianorg@debian.org>
 # This file is distributed under the same license as the mdadm package.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: mdadm\n"
 "Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
-"POT-Creation-Date: 2025-01-23 07:30+0100\n"
-"PO-Revision-Date: 2020-10-09 17:50-0300\n"
+"POT-Creation-Date: 2023-06-18 07:24+0200\n"
+"PO-Revision-Date: 2025-01-18 17:52-0300\n"
 "Last-Translator: Adriano Rafael Gomes <adrianorg@debian.org>\n"
-"Language-Team: Brazilian Portuguese <debian-l10n-"
-"portuguese@lists.debian.org>\n"
+"Language-Team: Brazilian Portuguese <debian-l10n-portuguese@lists.debian."
+"org>\n"
 "Language: pt_BR\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -21,7 +21,7 @@ msgstr ""
 #. Description
 #: ../mdadm.templates:2001
 msgid "no systemd init-system detected"
-msgstr ""
+msgstr "nenhum sistema de inicialização do systemd foi detectado"
 
 #. Type: note
 #. Description
@@ -30,6 +30,9 @@ msgid ""
 "The root filesystem of this system was detected to be on a RAID device, so "
 "mdadm might be required to run during boot to properly start your system."
 msgstr ""
+"Foi detectado que o sistema de arquivos raiz deste sistema está em um "
+"dispositivo RAID, portanto, talvez seja necessário executar o mdadm durante "
+"a inicialização para iniciar corretamente o seu sistema."
 
 #. Type: note
 #. Description
@@ -37,9 +40,12 @@ msgstr ""
 msgid ""
 "Beginning with newer versions of the mdadm package, init-system integration "
 "is available for systemd only. This system seems to use an alternative init-"
-"system which might or might not leave your system unbootable and will not "
-"run any of the maintenance jobs automatically."
+"system which might or might not leave your system unbootable."
 msgstr ""
+"Começando com novas versões do pacote mdadm, a integração com o sistema de "
+"inicialização (\"init-system\") está disponível somente para systemd. Este "
+"sistema parece usar um sistema de inicialização que pode, ou não, deixar o "
+"seu sistema não inicializável."
 
 #. Type: boolean
 #. Description
@@ -91,7 +97,7 @@ msgid ""
 "that such events don't go unnoticed."
 msgstr ""
 "O mdadm pode checar diariamente por dispositivos degradados e por "
-"dispositivos reserva em falta para garantir que tais eventos não passem "
+"dispositivos reserva em falta, para garantir que tais eventos não passem "
 "despercebidos."
 
 #. Type: boolean
@@ -228,8 +234,8 @@ msgstr ""
 #~| "boot, unless you correct the configuration file and recreate the initial "
 #~| "ramdisk."
 #~ msgid ""
-#~ "The specified array (${array}) is not listed in the configuration file ($"
-#~ "{config}). Therefore, it cannot be started during boot, unless you "
+#~ "The specified array (${array}) is not listed in the configuration file "
+#~ "(${config}). Therefore, it cannot be started during boot, unless you "
 #~ "correct the configuration file and recreate the initial ramdisk."
 #~ msgstr ""
 #~ "O dispositivo que você especificou (${array}) não está listado no arquivo "

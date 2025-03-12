@@ -8,7 +8,7 @@ Build-Depends:
  pkgconf,
  systemd-dev,
 Rules-Requires-Root: no
-Standards-Version: 4.7.0
+Standards-Version: 4.7.2
 Homepage: https://raid.wiki.kernel.org
 Vcs-Browser: https://git.devuan.org/devuan/mdadm
 Vcs-Git: https://git.devuan.org/devuan/mdadm
