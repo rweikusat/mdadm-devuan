@@ -1,3 +1,13 @@
+mdadm (4.4-7devuan2) unstable; urgency=medium
+
+  * Fix autopkgtests without systemd:
+    - add missing test dependencies
+    - ensure loop devices exist
+    - set environment variables without requiring systemctl
+  * d/control: add Breaks systemd-dev (workaround eudev #867).
+
+ -- Mark Hindley <mark@hindley.org.uk>  Sat, 05 Apr 2025 18:41:37 +0100
+
 mdadm (4.4-7devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.4-7.
