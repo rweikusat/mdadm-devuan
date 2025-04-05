@@ -1,3 +1,13 @@
 #!/bin/sh
 
-./test
+# Fixup for non-systemd systems
+if ! which systemctl > /dev/null; then
+    for n in 0 1 2 3 4 5 6 7 8 9 10 11 12 13
+    do
+	[ -b /dev/loop$n ] || mknod /dev/loop$n b 7 $n
+    done
+
+    ln -s /usr/bin/true /usr/bin/systemctl
+fi
+
+IMSM_DEVNAME_AS_SERIAL=1 IMSM_NO_PLATFORM=1 ./test

@@ -2,5 +2,8 @@ Tests: test-installed
 Restrictions: needs-root, isolation-machine
 Depends:
  fdisk,
+ kmod,
  mdadm,
+ mount,
+ selinux-utils,
  udev,
