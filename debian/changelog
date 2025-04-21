@@ -1,3 +1,10 @@
+mdadm (4.4-8) sid; urgency=medium
+
+  * Adding updated Romanian debconf translations from Remus-Gabriel Chelu
+    <remusgabriel.chelu@disroot.org> (Closes: #1101819).
+
+ -- Daniel Baumann <daniel@debian.org>  Mon, 21 Apr 2025 10:00:25 +0200
+
 mdadm (4.4-7) sid; urgency=medium
 
   * Adding updated Dutch debconf translations from Frans Spiesschaert
