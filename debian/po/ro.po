@@ -1,13 +1,13 @@
 # Romanian debconf translation of mdadm
-# Copyright (C) 2023 Remus-Gabriel Chelu <remusgabriel.chelu@disroot.org>
+# Copyright (C) 2023-2025 Remus-Gabriel Chelu <remusgabriel.chelu@disroot.org>
 # This file is distributed under the same license as the mdadm package.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mdadm 4.2+20230508-4\n"
+"Project-Id-Version: mdadm 4.4-7\n"
 "Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
 "POT-Creation-Date: 2025-01-23 07:30+0100\n"
-"PO-Revision-Date: 2023-06-27 22:27+0200\n"
+"PO-Revision-Date: 2025-04-01 13:02+0200\n"
 "Last-Translator: Remus-Gabriel Chelu <remusgabriel.chelu@disroot.org>\n"
 "Language-Team: Romanian <debian-l10n-romanian@lists.debian.org>\n"
 "Language: ro\n"
@@ -38,12 +38,6 @@ msgstr ""
 #. Type: note
 #. Description
 #: ../mdadm.templates:2001
-#, fuzzy
-#| msgid ""
-#| "Beginning with newer versions of the mdadm package, init-system "
-#| "integration is available for systemd only. This system seems to use an "
-#| "alternative init-system which might or might not leave your system "
-#| "unbootable."
 msgid ""
 "Beginning with newer versions of the mdadm package, init-system integration "
 "is available for systemd only. This system seems to use an alternative init-"
@@ -53,7 +47,8 @@ msgstr ""
 "Începând cu versiunile mai noi ale pachetului „mdadm”, integrarea sistemului "
 "de inițiere (init) este disponibilă numai pentru „systemd”. Acest sistem "
 "pare să utilizeze un sistem de inițiere alternativ care ar putea sau nu să "
-"vă lase sistemul incapabil de-a porni."
+"vă lase sistemul incapabil de-a porni și nu va executa automat niciuna "
+"dintre operațiile de întreținere."
 
 #. Type: boolean
 #. Description
