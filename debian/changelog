@@ -1,3 +1,9 @@
+mdadm (4.4-8devuan1) unstable; urgency=medium
+
+  * Merge tag debian/4.4-8.
+
+ -- Mark Hindley <mark@hindley.org.uk>  Tue, 22 Apr 2025 06:46:51 +0100
+
 mdadm (4.4-8) sid; urgency=medium
 
   * Adding updated Romanian debconf translations from Remus-Gabriel Chelu
