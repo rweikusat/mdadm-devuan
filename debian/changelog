@@ -1,3 +1,12 @@
+mdadm (4.4-9) sid; urgency=medium
+
+  * Correcting copy paste error in watch file.
+  * Updating upstream urls to point to github.
+  * Adding updated Brazilian Portuguese debconf translations from Adriano
+    Rafael Gomes <adrianorg@debian.org> (Closes: #1103771).
+
+ -- Daniel Baumann <daniel@debian.org>  Tue, 22 Apr 2025 12:22:20 +0200
+
 mdadm (4.4-8) sid; urgency=medium
 
   * Adding updated Romanian debconf translations from Remus-Gabriel Chelu
