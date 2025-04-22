@@ -9,7 +9,7 @@ Build-Depends:
  systemd-dev,
 Rules-Requires-Root: no
 Standards-Version: 4.7.2
-Homepage: https://raid.wiki.kernel.org
+Homepage: https://github.com/md-raid-utilities/mdadm
 Vcs-Browser: https://forgejo.debian.net/linux/mdadm
 Vcs-Git: https://forgejo.debian.net/linux/mdadm
 
