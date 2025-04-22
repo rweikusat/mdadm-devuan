@@ -1,3 +1,9 @@
+mdadm (4.4-10) sid; urgency=medium
+
+  * Simplifying watch file to make it actually work.
+
+ -- Daniel Baumann <daniel@debian.org>  Tue, 22 Apr 2025 21:39:47 +0200
+
 mdadm (4.4-9) sid; urgency=medium
 
   * Correcting copy paste error in watch file.
