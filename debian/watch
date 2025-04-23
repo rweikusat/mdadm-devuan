@@ -1,2 +1,2 @@
 version=4
-https://github.com/md-raid-utilities/mdadm/tags .*/mdadm-(\d.*)@ARCHIVE_EXT@
+https://github.com/md-raid-utilities/mdadm/tags .*/mdadm-?(\d.*)@ARCHIVE_EXT@
