@@ -1,3 +1,9 @@
+mdadm (4.4-10devuan1) unstable; urgency=medium
+
+  * Merge tag debian/4.4-10.
+
+ -- Mark Hindley <mark@hindley.org.uk>  Wed, 23 Apr 2025 06:37:20 +0100
+
 mdadm (4.4-10) sid; urgency=medium
 
   * Simplifying watch file to make it actually work.
