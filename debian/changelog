@@ -1,3 +1,14 @@
+mdadm (4.4-11) sid; urgency=medium
+
+  [ Daniel Baumann ]
+  * Harmonizing watch file.
+
+  [ Cyrus Lien ]
+  * Adding a initramfs-tools script to mount the efivarfs during the
+    initramfs boot phase (Closes: #1003352, #1103762; LP: #1993541).
+
+ -- Daniel Baumann <daniel@debian.org>  Fri, 25 Apr 2025 18:24:19 +0200
+
 mdadm (4.4-10) sid; urgency=medium
 
   * Simplifying watch file to make it actually work.
