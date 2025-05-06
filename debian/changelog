@@ -1,3 +1,12 @@
+mdadm (4.4-11devuan2) unstable; urgency=medium
+
+  * Revert "d/control: add Breaks systemd-dev (workaround eudev #867).":
+    fixed in src:eudev.
+  * Build depend on libeudev-dev directly and specify SYSTEMD_DIR
+    manually.
+
+ -- Mark Hindley <mark@hindley.org.uk>  Tue, 06 May 2025 13:28:27 +0100
+
 mdadm (4.4-11devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.4-11.
