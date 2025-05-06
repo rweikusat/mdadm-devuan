@@ -4,9 +4,8 @@ Priority: optional
 Maintainer: Mark Hindley <mark@hindley.org.uk>
 Build-Depends:
  debhelper-compat (= 13),
- libudev-dev,
+ libeudev-dev,
  pkgconf,
- systemd-dev,
 Rules-Requires-Root: no
 Standards-Version: 4.7.2
 Homepage: https://github.com/md-raid-utilities/mdadm
