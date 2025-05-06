@@ -23,7 +23,6 @@ Depends:
  udev,
  ${misc:Depends},
  ${shlibs:Depends},
-Breaks: systemd-dev ( >= 253.2)
 Recommends:
  kmod,
 Suggests:
