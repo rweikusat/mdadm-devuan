@@ -26,7 +26,7 @@ execute_after_dh_auto_clean:
 	done
 
 execute_before_dh_install:
-	$(MAKE) install-systemd DESTDIR=$(CURDIR)/debian/tmp SYSTEMD_DIR=/usr/lib/systemd/system
+	$(MAKE) install-systemd DESTDIR=$(CURDIR)/debian/tmp
 
 execute_after_dh_install:
 	mkdir -p $(CURDIR)/debian/mdadm/etc/mdadm
