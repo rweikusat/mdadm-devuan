@@ -1,3 +1,10 @@
+mdadm (4.4-11devuan3) unstable; urgency=medium
+
+  * Move /lib symlinks to /usr/lib.
+  * Revert "d/control: B-D libeudev-dev and specify SYSTEMD_DIR manually."
+
+ -- Mark Hindley <mark@hindley.org.uk>  Fri, 09 May 2025 20:29:16 +0100
+
 mdadm (4.4-11devuan2) unstable; urgency=medium
 
   * Revert "d/control: add Breaks systemd-dev (workaround eudev #867).":
