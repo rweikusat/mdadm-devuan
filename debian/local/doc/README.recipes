@@ -8,9 +8,6 @@ file.
 
 Enjoy. Submissions welcome.
 
-The latest version of this document is available here:
-  http://git.debian.org/?p=pkg-mdadm/mdadm.git;a=blob;f=debian/README.recipes;hb=HEAD
-
 The short options used here are:
 
     -l Set  RAID  level.
