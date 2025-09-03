@@ -1,26 +1,28 @@
 # Portuguese debconf translation of mdadm
 # Copyright (C) 2008 Pedro Ribeiro <p.m42.ribeiro@gmail.com>
 # Copyright (C) 2020 Miguel Figueiredo <elmig@debianpt.org>
+# Copyright (C) 2025 Américo Monteiro <a_monteiro@gmx.com>
 # This file is distributed under the same license as the mdadm package.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mdadm 2.6.3+200709292116+4450e59-4\n"
+"Project-Id-Version: mdadm 4.4-11\n"
 "Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
 "POT-Creation-Date: 2025-01-23 07:30+0100\n"
-"PO-Revision-Date: 2020-10-10 09:47+0100\n"
-"Last-Translator: Miguel Figueiredo <elmig@debianpt.org>\n"
-"Language-Team: Portuguese <traduz@debianpt.org>\n"
+"PO-Revision-Date: 2025-06-07 17:48+0100\n"
+"Last-Translator: Américo Monteiro <a_monteiro@gmx.com>\n"
+"Language-Team: Portuguese <>\n"
 "Language: pt\n"
 "MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=utf-8\n"
+"Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #. Type: note
 #. Description
 #: ../mdadm.templates:2001
 msgid "no systemd init-system detected"
-msgstr ""
+msgstr "nenhum sistema-de-iniciação systemd detetado"
 
 #. Type: note
 #. Description
@@ -29,6 +31,9 @@ msgid ""
 "The root filesystem of this system was detected to be on a RAID device, so "
 "mdadm might be required to run during boot to properly start your system."
 msgstr ""
+"O sistema de ficheiros raiz deste sistema foi detetado estar num "
+"dispositivo RAID, assim pode ser requerido que o mdadm corra durante "
+"o arranque para iniciar apropriadamente o seu sistema."
 
 #. Type: note
 #. Description
@@ -39,13 +44,18 @@ msgid ""
 "system which might or might not leave your system unbootable and will not "
 "run any of the maintenance jobs automatically."
 msgstr ""
+"A começar com as novas versões do pacote mdadm, a integração com o sistema "
+"de iniciação está disponível apenas para systemd. Este sistema parece usar "
+"um sistema de iniciação alternativo que pode, ou não, deixar o seu sistema "
+"sem arrancar e não irá correr nenhuma das tarefas de manutenção "
+"automaticamente."
 
 #. Type: boolean
 #. Description
 #: ../mdadm.templates:3001
 msgid "Should mdadm run monthly redundancy checks of the MD arrays?"
 msgstr ""
-"O mdadm deve correr verificações de redundância nos grupos MD mensalmente?"
+"Deve o mdadm correr verificações mensais de redundância das matrizes MD?"
 
 #. Type: boolean
 #. Description
@@ -58,13 +68,13 @@ msgid ""
 "errors are found; if errors are found, mdadm will try to correct them, which "
 "may result in write access to the media."
 msgstr ""
-"Se o kernel suportar (versões mais recentes que 2.6.14) o mdadm pode "
-"verificar periodicamente a redundância dos grupos MD (RAIDs). Isto pode ser "
-"um processo que requer muitos recursos, dependendo da sua configuração, mas "
+"Se o kernel suportar (versões maiores que 2.6.14) o mdadm pode verificar "
+"periodicamente a redundância das matrizes MD (RAIDs). Isto pode ser um "
+"processo que requer muitos recursos, dependendo da sua configuração, mas "
 "pode prevenir casos raros de perda de dados. Notar que esta verificação é "
 "feita em modo de leitura a não ser que sejam encontrados erros; se forem "
 "encontrados erros, o mdadm tenta corrigi-los, o que pode resultar em "
-"acessosde escrita aos discos."
+"acessos de escrita aos discos."
 
 #. Type: boolean
 #. Description
@@ -73,14 +83,14 @@ msgid ""
 "The default, if turned on, is to check on the first Sunday of every month at "
 "01:06."
 msgstr ""
-"O pré-definido, se ligado, é os testes serem executados no primeiro Domingo "
-"de cada mês às 01:06."
+"A predefinição, se ligada, é de verificar no primeiro Domingo de cada "
+"mês às 01:06."
 
 #. Type: boolean
 #. Description
 #: ../mdadm.templates:4001
 msgid "Should mdadm check once a day for degraded arrays?"
-msgstr "Deve o mdadm verificar arrays degradados, uma vez por dia?"
+msgstr "Deve o mdadm verificar todos os dias por matrizes degradadas?"
 
 #. Type: boolean
 #. Description
@@ -89,14 +99,14 @@ msgid ""
 "mdadm can check once a day for degraded arrays and missing spares to ensure "
 "that such events don't go unnoticed."
 msgstr ""
-"O mdadm pode verificar uma vez por dia a existência de arrays degradados e "
-"spares em falta para assegurar que tais eventos não passam despercebidos."
+"O mdadm pode verificar uma vez por dia a existência de matrizes degradadas "
+"e spares em falta para assegurar que tais eventos não passem despercebidos."
 
 #. Type: boolean
 #. Description
 #: ../mdadm.templates:5001
 msgid "Do you want to start the MD monitoring daemon?"
-msgstr "Quer iniciar o deamon de monitorização do MD?"
+msgstr "Deseja iniciar o daemon de monitorização do MD?"
 
 #. Type: boolean
 #. Description
@@ -105,9 +115,8 @@ msgid ""
 "The MD (RAID) monitor daemon sends email notifications in response to "
 "important MD events (such as a disk failure)."
 msgstr ""
-"O daemon monitor MD(RAID) envia notificações por email no caso de eventos "
-"importantes (tais como falha de um disco). Provavelmente quer activar esta "
-"opção."
+"O daemon monitor MD (RAID) envia notificações por email no caso de eventos "
+"MD importantes (tais como falha de disco)."
 
 #. Type: boolean
 #. Description
@@ -130,90 +139,3 @@ msgid ""
 msgstr ""
 "Por favor, introduza o endereço de email do utilizador que deve receber as "
 "notificações de eventos MD importantes."
-
-#~ msgid "MD arrays needed for the root file system:"
-#~ msgstr "Grupos MD necessários para o sistema de ficheiros raiz:"
-
-#~ msgid ""
-#~ "Please enter 'all', 'none', or a space-separated list of devices such as "
-#~ "'md0 md1' or 'md/1 md/d0' (the leading '/dev/' can be omitted)."
-#~ msgstr ""
-#~ "Por favor, introduza 'all', 'none', ou uma lista de dispositivos "
-#~ "separados por espaços, tais como 'md0 md1' ou 'md/1 md/d0' (o '/dev/' "
-#~ "inicial pode ser omitido)."
-
-#~ msgid "for internal use - only the long description is needed."
-#~ msgstr "para uso interno - apenas a descrição longa é necessária"
-
-#~ msgid ""
-#~ "If the system's root file system is located on an MD array (RAID), it "
-#~ "needs to be started early during the boot sequence. If it is located on a "
-#~ "logical volume (LVM), which is on MD, all constituent arrays need to be "
-#~ "started."
-#~ msgstr ""
-#~ "Se o sistema de ficheiros de raiz do sistema estiver num grupo MD (RAID), "
-#~ "necessita de ser iniciado mais cedo na sequência de arranque. Se o seu "
-#~ "sistema de ficheiros de raiz estiver num volume lógico (LVM) que está no "
-#~ "MD, todos os grupos constituintes necessitam de ser iniciados."
-
-#~ msgid ""
-#~ "If you know exactly which arrays are needed to bring up the root file "
-#~ "system, and you want to postpone starting all other arrays to a later "
-#~ "point in the boot sequence, enter the arrays to start here. "
-#~ "Alternatively, enter 'all' to simply start all available arrays."
-#~ msgstr ""
-#~ "Se souber exactamente que grupos são necessários para iniciar o sistema "
-#~ "de ficheiros raiz, e quiser adiar o inicio de todos os outros grupos para "
-#~ "mais tarde no processo de arranque, introduza os grupos aqui. "
-#~ "Alternativamente, introduza 'all' para iniciar todos os grupos "
-#~ "disponíveis."
-
-#~ msgid ""
-#~ "If you do not need or want to start any arrays for the root file system, "
-#~ "leave the answer blank (or enter 'none'). This may be the case if you are "
-#~ "using kernel autostart or do not need any arrays to boot."
-#~ msgstr ""
-#~ "Se não necessita ou deseja iniciar grupos para o sistema de ficheiros "
-#~ "raiz, deixe a resposta em branco (ou introduza 'none'). Isto vale no caso "
-#~ "de usar o auto-arranque do kernel ou não necessitar de grupos para o "
-#~ "arranque do sistema."
-
-#~ msgid "An error occurred: device node does not exist"
-#~ msgstr "Ocorreu um erro: o nó do dispositivo não existe"
-
-#~ msgid "An error occurred: not a block device"
-#~ msgstr "Ocorreu um erro: não é um dispositivo de bloco"
-
-#~ msgid "An error occurred: not an MD array"
-#~ msgstr "Ocorreu um erro: não é um grupo MD"
-
-#~ msgid "An error occurred: array not listed in mdadm.conf file"
-#~ msgstr "Ocorreu um erro: o grupo não está listado no ficheiro mdadm.conf"
-
-#~ msgid "Start arrays not listed in mdadm.conf?"
-#~ msgstr "Iniciar grupos não listados no mdadm.conf?"
-
-#~ msgid ""
-#~ "The specified array (${array}) is not listed in the configuration file ($"
-#~ "{config}). Therefore, it cannot be started during boot, unless you "
-#~ "correct the configuration file and recreate the initial ramdisk."
-#~ msgstr ""
-#~ "O grupo especificado (${array}) não está listado no ficheiro de "
-#~ "configuração (${config}). Portanto, não pode ser iniciado durante o "
-#~ "processo de arranque, a não ser que corrija o ficheiro de configuração e "
-#~ "recrie o ramdisk inicial."
-
-#~ msgid ""
-#~ "This warning is only relevant if you need arrays to be started from the "
-#~ "initial ramdisk to be able to boot. If you use kernel autostarting, or do "
-#~ "not need any arrays to be started as early as the initial ramdisk is "
-#~ "loaded, you can simply continue. Alternatively, choose not to continue "
-#~ "and enter 'none' when prompted which arrays to start from the initial "
-#~ "ramdisk."
-#~ msgstr ""
-#~ "Este aviso só é relevante se houver necessidade de iniciar grupos a "
-#~ "partir do ramdisk durante o arranque do sistema. Se usar o auto-arranque "
-#~ "do kernel, ou não necessitar de iniciar os grupos tão cedo no processo de "
-#~ "arranque do sistema, pode simplesmente continuar. Em alternativa, escolha "
-#~ "não continuar e introduza 'none' quando perguntado sobre quais grupos "
-#~ "iniciar a partir do ramdisk inicial."
