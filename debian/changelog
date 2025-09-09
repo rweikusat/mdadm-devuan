@@ -1,3 +1,9 @@
+mdadm (4.4-12devuan1) unstable; urgency=medium
+
+  * Merge tag debian/4.4-12.
+
+ -- Mark Hindley <mark@hindley.org.uk>  Tue, 09 Sep 2025 11:37:21 +0100
+
 mdadm (4.4-12) sid; urgency=medium
 
   * Removing old link to git.debian.org in README.recipes.
