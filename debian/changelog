@@ -1,3 +1,12 @@
+mdadm (4.4-12) sid; urgency=medium
+
+  * Removing old link to git.debian.org in README.recipes.
+  * Correcting wrong file reference in README.recipes.
+  * Adding updated Portuguese debconf translations from Américo Monteiro
+    <a_monteiro@gmx.com> (Closes: #1107438).
+
+ -- Daniel Baumann <daniel@debian.org>  Wed, 03 Sep 2025 04:12:40 +0200
+
 mdadm (4.4-11devuan3) unstable; urgency=medium
 
   * Move /lib symlinks to /usr/lib.

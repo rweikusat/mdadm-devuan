@@ -3,13 +3,9 @@ mdadm recipes
 
 The following examples/recipes may help you with your mdadm experience. I'll
 leave it as an exercise to use the correct device names and parameters in each
-case. You can find pointers to additional documentation in the README.Debian
-file.
+case. You can find pointers to additional documentation in the FAQ file.
 
 Enjoy. Submissions welcome.
-
-The latest version of this document is available here:
-  http://git.debian.org/?p=pkg-mdadm/mdadm.git;a=blob;f=debian/README.recipes;hb=HEAD
 
 The short options used here are:
 
