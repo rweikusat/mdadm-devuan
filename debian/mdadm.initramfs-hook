@@ -92,7 +92,6 @@ if [ ! -f $CONFIG ]; then
         else
                 # we failed to auto-generate, so let the emergency procedure take over
                 warn "failed to auto-generate the mdadm.conf file."
-                warn "please read /usr/share/doc/mdadm/README.upgrading-2.5.3.gz ."
         fi
 else
 	cp -p $CONFIG ${DESTDIR}/etc/mdadm
