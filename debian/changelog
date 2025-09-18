@@ -1,3 +1,17 @@
+mdadm (4.4-13) sid; urgency=medium
+
+  * Adding patch from QRPp <awesome.walrus+github@gmail.com> to fix fails
+    with with relative ARRAY devnames (Closes: #1114744).
+  * Adding patch from Peter Mann <peter.mann@sh.cz> to fix memory leak in
+    mdadm --monitor --scan (Closes: #1115497).
+  * Adding updated Italian debconf translations from Luca Monducci
+    <luca.mo@tiscali.it> (Closes: #1114858).
+  * Removing in initramfs hook a reference to old documentation file
+    removed by upstream, thanks to Lionel Elie Mamane <lionel@mamane.lu>
+    (Closes: #1112392).
+
+ -- Daniel Baumann <daniel@debian.org>  Thu, 18 Sep 2025 15:20:58 +0200
+
 mdadm (4.4-12devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.4-12.

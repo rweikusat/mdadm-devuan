@@ -10,4 +10,6 @@ debian/0010-mdcheck-fix-empty-spaces-in-timer-unit-files.patch
 debian/0011-systemd-directory.patch
 debian/0012-bin-directory.patch
 debian/0013-xmalloc-ftbfs.patch
+debian/0014-monitor-nonabsolute-devnames.patch
 upstream/0001-manpage-remove-bitmap.patch
+debian/0015-monitor-memory-leak.patch
