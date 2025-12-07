@@ -1,5 +1,5 @@
 # Translation of mdadm debconf template to Swedish
-# Copyright (C) 2008-2023 Martin Bagge <brother@persilja.net>
+# Copyright (C) 2008-2025 Martin Bagge <brother@persilja.net>
 # This file is distributed under the same license as the mdadm package.
 #
 msgid ""
@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: mdadm_2.6.7-3_sv\n"
 "Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
 "POT-Creation-Date: 2025-01-23 07:30+0100\n"
-"PO-Revision-Date: 2023-12-08 11:11+0100\n"
+"PO-Revision-Date: 2025-12-05 17:46+0100\n"
 "Last-Translator: Martin Bagge <brother@persilja.net>\n"
 "Language-Team: Swedish <debian-l10n-swedish@lists.debian.org>\n"
 "Language: sv\n"
@@ -35,21 +35,12 @@ msgstr ""
 #. Type: note
 #. Description
 #: ../mdadm.templates:2001
-#, fuzzy
-#| msgid ""
-#| "Beginning with newer versions of the mdadm package, init-system "
-#| "integration is available for systemd only. This system seems to use an "
-#| "alternative init-system which might or might not leave your system "
-#| "unbootable."
 msgid ""
 "Beginning with newer versions of the mdadm package, init-system integration "
 "is available for systemd only. This system seems to use an alternative init-"
 "system which might or might not leave your system unbootable and will not "
 "run any of the maintenance jobs automatically."
-msgstr ""
-"I nyare versioner av mdadm är integrationen med init-system enbart "
-"tillgänglig för systemd. Denna maskin verkar använda ett alternativt init-"
-"system vilket kan leda till att maskinen inte kan starta korrekt."
+msgstr "I nyare versioner av mdadm är integrationen med init-system enbart tillgänglig för systemd. Denna maskin verkar använda ett alternativt init-system vilket kan leda till att maskinen inte kan starta korrekt eller köra underhållsjobb automatiskt."
 
 #. Type: boolean
 #. Description
