@@ -1,3 +1,9 @@
+mdadm (4.4-14devuan1) unstable; urgency=medium
+
+  * Merge tag debian/4.4-14.
+
+ -- Mark Hindley <mark@hindley.org.uk>  Sun, 07 Dec 2025 18:17:12 +0000
+
 mdadm (4.4-14) sid; urgency=medium
 
   * Removing rules-requires-root, not needed anymore.
