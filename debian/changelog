@@ -1,3 +1,13 @@
+mdadm (4.4-14) sid; urgency=medium
+
+  * Removing rules-requires-root, not needed anymore.
+  * Adding updated Swedish debconf translations from Martin Bagge
+    <brother@persilja.net> (Closes: #1121992).
+  * Adding updated Catalan debconf translations from Carles Pina i Estany
+    <carles@pina.cat> (Closes: #1117573).
+
+ -- Daniel Baumann <daniel@debian.org>  Sun, 07 Dec 2025 09:32:47 +0100
+
 mdadm (4.4-13devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.4-13.
