@@ -1,5 +1,6 @@
 # Catalan debconf translation of mdadm
 # Copyright (C) 2011 Innocent De Marchi <tangram.peces@gmail.com>
+# Copyright (C) 2025 poc senderi <pocsenderi@protonmail.com>
 # This file is distributed under the same license as the mdadm package.
 #
 msgid ""
@@ -7,8 +8,8 @@ msgstr ""
 "Project-Id-Version: 3.1.4-1+8efb9d1\n"
 "Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
 "POT-Creation-Date: 2025-01-23 07:30+0100\n"
-"PO-Revision-Date: 2011-05-17 16:54+0100\n"
-"Last-Translator: Innocent De Marchi <tangram.peces@gmail.com>\n"
+"PO-Revision-Date: 2025-10-07 21:12+0200\n"
+"Last-Translator: poc senderi <pocsenderi@protonmail.com>\n"
 "Language-Team: Catalan <debian-l10n-catalan@lists.debian.org>\n"
 "Language: ca\n"
 "MIME-Version: 1.0\n"
@@ -19,7 +20,7 @@ msgstr ""
 #. Description
 #: ../mdadm.templates:2001
 msgid "no systemd init-system detected"
-msgstr ""
+msgstr "no s'ha detectat l'inicialitzador del «systemd»"
 
 #. Type: note
 #. Description
@@ -28,6 +29,9 @@ msgid ""
 "The root filesystem of this system was detected to be on a RAID device, so "
 "mdadm might be required to run during boot to properly start your system."
 msgstr ""
+"S'ha detectat que l'arrel del sistema de fitxers es troba en un dispositiu "
+"RAID, així que l'«mdadm» pot ser requerit per executar-se durant l'engegada "
+"per iniciar adequadament el sistema."
 
 #. Type: note
 #. Description
@@ -38,6 +42,11 @@ msgid ""
 "system which might or might not leave your system unbootable and will not "
 "run any of the maintenance jobs automatically."
 msgstr ""
+"A partir de les versions recents del paquet «mdadm», la integració amb "
+"l'«init-system» només està disponible per al «systemd». Sembla que aquest "
+"sistema usa un «init-system» alternatiu que pot o no deixar el sistema "
+"incapaç d'engegar i no executarà automàticament cap de les tasques de "
+"manteniment."
 
 #. Type: boolean
 #. Description
@@ -58,13 +67,13 @@ msgid ""
 "errors are found; if errors are found, mdadm will try to correct them, which "
 "may result in write access to the media."
 msgstr ""
-"Si el nucli ho accepta (versions superiors a la 2.6.14), «mdadm» pot fer "
-"comprovacions periòdiques de la redundància de les matrius MD (RAIDs). Pot "
-"ésser que aquest procés consumeixi molts recursos del sistema, depenent de "
-"la configuració, però pot ajudar a prevenir casos poc freqüents de pèrdua de "
-"dades. Teniu present que aquestes comprovacions es fan en mode lectura "
-"llevat que es detectin errors: si hi ha errors, «mdadm» els corregirà i per "
-"això, caldrà que tengui accés d'escriptura als mitjans físics. "
+"Si el nucli és compatible (versions superiors a la 2.6.14), l'«mdadm» pot "
+"fer comprovacions periòdiques de la redundància de les matrius MD (RAIDs). "
+"Pot ésser que aquest procés consumeixi molts recursos del sistema, depenent "
+"de la configuració local, però pot ajudar a prevenir casos poc freqüents de "
+"pèrdua de dades. Teniu present que aquestes comprovacions es fan en mode "
+"lectura llevat que es detectin errors: si n'hi ha, l'«mdadm» els mirarà de "
+"corregir, fet que pot resultar en accés d'escriptura als mitjans físics."
 
 #. Type: boolean
 #. Description
@@ -73,7 +82,7 @@ msgid ""
 "The default, if turned on, is to check on the first Sunday of every month at "
 "01:06."
 msgstr ""
-"El valor predeterminat, si s'activa, es fer la comprovació el primer "
+"El valor predeterminat, si s'activa, és fer la comprovació el primer "
 "diumenge de cada mes a les 01:06 am."
 
 #. Type: boolean
@@ -81,6 +90,7 @@ msgstr ""
 #: ../mdadm.templates:4001
 msgid "Should mdadm check once a day for degraded arrays?"
 msgstr ""
+"Voleu que l'«mdadm» comprovi un cop al dia si hi ha matrius degradades?"
 
 #. Type: boolean
 #. Description
@@ -89,6 +99,8 @@ msgid ""
 "mdadm can check once a day for degraded arrays and missing spares to ensure "
 "that such events don't go unnoticed."
 msgstr ""
+"L'«mdadm» pot comprovar un cop al dia si troba matrius degradades i «spares» "
+"desapareguts per assegurar-se que aquests fets no passin desapercebuts."
 
 #. Type: boolean
 #. Description
@@ -127,7 +139,7 @@ msgid ""
 "notifications for important MD events."
 msgstr ""
 "Introduïu l'adreça de correu electrònic de l'usuari que ha de rebre les "
-"notificacions de correu electrònic per a esdeveniments MD rellevants."
+"notificacions de correu electrònic per a esdeveniments MD importants."
 
 #~ msgid "MD arrays needed for the root file system:"
 #~ msgstr "Les matrius MD necessaris per al sistema de fitxers arrel:"
@@ -194,8 +206,8 @@ msgstr ""
 #~ msgstr "Voleu arrencar les matrius no llistats en el fitxer «mdadm.conf»?"
 
 #~ msgid ""
-#~ "The specified array (${array}) is not listed in the configuration file ($"
-#~ "{config}). Therefore, it cannot be started during boot, unless you "
+#~ "The specified array (${array}) is not listed in the configuration file "
+#~ "(${config}). Therefore, it cannot be started during boot, unless you "
 #~ "correct the configuration file and recreate the initial ramdisk."
 #~ msgstr ""
 #~ "La matriu («array»)  especificada (${array}) no apareix llistada en el "
