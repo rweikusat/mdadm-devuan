@@ -7,7 +7,7 @@ Build-Depends:
  libudev-dev,
  pkgconf,
  systemd-dev,
-Standards-Version: 4.7.2
+Standards-Version: 4.7.3
 Homepage: https://github.com/md-raid-utilities/mdadm
 Vcs-Browser: https://forgejo.debian.net/linux/mdadm
 Vcs-Git: https://forgejo.debian.net/linux/mdadm
