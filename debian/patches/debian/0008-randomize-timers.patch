@@ -8,7 +8,7 @@ diff -Naurp mdadm.orig/systemd/mdcheck_continue.timer mdadm/systemd/mdcheck_cont
  Description=MD array scrubbing - continuation
  
  [Timer]
--OnCalendar= 1:05:00
+-OnCalendar= 1:00:00
 +OnCalendar=daily
 +RandomizedDelaySec=12h
 +Persistent=true
@@ -21,7 +21,7 @@ diff -Naurp mdadm.orig/systemd/mdcheck_start.timer mdadm/systemd/mdcheck_start.t
 @@ -10,6 +10,8 @@ Description=MD array scrubbing
  
  [Timer]
- OnCalendar=Sun *-*-1..7 1:00:00
+ OnCalendar=Sun *-*-1..7 0:45:00
 +RandomizedDelaySec=24h
 +Persistent=true
  
