@@ -1,7 +1,7 @@
 **mdadm** is a utility used to create and manage **software RAID** devices implemented through
 **Multiple devices driver (MD)** in kernel. It supports following RAID metadata formats:
 
-* [Linux native RAID](https://raid.wiki.kernel.org/index.php/RAID_superblock_formats):
+* [Linux native RAID](https://docs.kernel.org/admin-guide/md.html#superblock-formats):
 
   Known as **native** or **native RAID**. First and default metadata format. Metadata management
   is implemented in **MD driver**.
@@ -77,10 +77,7 @@ to the chosen branch, then Pull Request will be automatically updated.
 
 # Maintainers of mdadm repository on kernel.org
 
-If there are differences between github and kernel.org, please contact kernel.org mdadm maintainers:
-
-- Jes Sorensen <jes@trained-monkey.org>;
-- Mariusz Tkaczyk <mariusz.tkaczyk@linux.intel.com>;
+See [Maintainers File](MAINTAINERS.md).
 
 # Minimal supported kernel version
 
@@ -138,9 +135,6 @@ List of installation targets:
 
 The following targets are deprecated and should not be used:
 - `install-static`
-- `install-tcc`
-- `install-uclibc`
-- `install-klibc`
 
 # License
 

@@ -26,92 +26,6 @@
 #include "mdadm.h"
 #include "xmalloc.h"
 
-/*
- * The version-1 superblock :
- * All numeric fields are little-endian.
- *
- * total size: 256 bytes plus 2 per device.
- *  1K allows 384 devices.
- */
-struct mdp_superblock_1 {
-	/* constant array information - 128 bytes */
-	__u32	magic;		/* MD_SB_MAGIC: 0xa92b4efc - little endian */
-	__u32	major_version;	/* 1 */
-	__u32	feature_map;	/* 0 for now */
-	__u32	pad0;		/* always set to 0 when writing */
-
-	__u8	set_uuid[16];	/* user-space generated. */
-	char	set_name[32];	/* set and interpreted by user-space */
-
-	__u64	ctime;		/* lo 40 bits are seconds, top 24 are microseconds or 0*/
-	__u32	level;		/* -4 (multipath), -1 (linear), 0,1,4,5 */
-	__u32	layout;		/* used for raid5, raid6, raid10, and raid0 */
-	__u64	size;		/* used size of component devices, in 512byte sectors */
-
-	__u32	chunksize;	/* in 512byte sectors */
-	__u32	raid_disks;
-	union {
-		__u32	bitmap_offset;	/* sectors after start of superblock that bitmap starts
-					 * NOTE: signed, so bitmap can be before superblock
-					 * only meaningful of feature_map[0] is set.
-					 */
-
-		/* only meaningful when feature_map[MD_FEATURE_PPL] is set */
-		struct {
-			__s16 offset; /* sectors from start of superblock that ppl starts */
-			__u16 size; /* ppl size in sectors */
-		} ppl;
-	};
-
-	/* These are only valid with feature bit '4' */
-	__u32	new_level;	/* new level we are reshaping to		*/
-	__u64	reshape_position;	/* next address in array-space for reshape */
-	__u32	delta_disks;	/* change in number of raid_disks		*/
-	__u32	new_layout;	/* new layout					*/
-	__u32	new_chunk;	/* new chunk size (sectors)			*/
-	__u32	new_offset;	/* signed number to add to data_offset in new
-				 * layout.  0 == no-change.  This can be
-				 * different on each device in the array.
-				 */
-
-	/* constant this-device information - 64 bytes */
-	__u64	data_offset;	/* sector start of data, often 0 */
-	__u64	data_size;	/* sectors in this device that can be used for data */
-	__u64	super_offset;	/* sector start of this superblock */
-	union {
-		__u64	recovery_offset;/* sectors before this offset (from data_offset) have been recovered */
-		__u64	journal_tail;/* journal tail of journal device (from data_offset) */
-	};
-	__u32	dev_number;	/* permanent identifier of this  device - not role in raid */
-	__u32	cnt_corrected_read; /* number of read errors that were corrected by re-writing */
-	__u8	device_uuid[16]; /* user-space setable, ignored by kernel */
-	__u8    devflags;        /* per-device flags.  Only one defined...*/
-#define WriteMostly1    1        /* mask for writemostly flag in above */
-#define FailFast1	2        /* Device should get FailFast requests */
-	/* bad block log.  If there are any bad blocks the feature flag is set.
-	 * if offset and size are non-zero, that space is reserved and available.
-	 */
-	__u8	bblog_shift;	/* shift from sectors to block size for badblock list */
-	__u16	bblog_size;	/* number of sectors reserved for badblock list */
-	__u32	bblog_offset;	/* sector offset from superblock to bblog, signed */
-
-	/* array state information - 64 bytes */
-	__u64	utime;		/* 40 bits second, 24 bits microseconds */
-	__u64	events;		/* incremented when superblock updated */
-	__u64	resync_offset;	/* data before this offset (from data_offset) known to be in sync */
-	__u32	sb_csum;	/* checksum upto dev_roles[max_dev] */
-	__u32	max_dev;	/* size of dev_roles[] array to consider */
-	__u8	pad3[64-32];	/* set to 0 when writing */
-
-	/* device state information. Indexed by dev_number.
-	 * 2 bytes per device
-	 * Note there are no per-device state flags. State information is rolled
-	 * into the 'roles' value.  If a device is spare or faulty, then it doesn't
-	 * have a meaningful role.
-	 */
-	__u16	dev_roles[0];	/* role in array, or 0xffff for a spare, or 0xfffe for faulty */
-};
-
 #define MAX_SB_SIZE 4096
 /* bitmap super size is 256, but we round up to a sector for alignment */
 #define BM_SUPER_SIZE 512
@@ -126,40 +40,6 @@ struct misc_dev_info {
 #define MULTIPLE_PPL_AREA_SIZE_SUPER1 (1024 * 1024) /* Size of the whole
 						     * mutliple PPL area
 						     */
-/* feature_map bits */
-#define MD_FEATURE_BITMAP_OFFSET	1
-#define	MD_FEATURE_RECOVERY_OFFSET	2 /* recovery_offset is present and
-					   * must be honoured
-					   */
-#define	MD_FEATURE_RESHAPE_ACTIVE	4
-#define	MD_FEATURE_BAD_BLOCKS		8 /* badblock list is not empty */
-#define	MD_FEATURE_REPLACEMENT		16 /* This device is replacing an
-					    * active device with same 'role'.
-					    * 'recovery_offset' is also set.
-					    */
-#define	MD_FEATURE_RESHAPE_BACKWARDS	32 /* Reshape doesn't change number
-					    * of devices, but is going
-					    * backwards anyway.
-					    */
-#define	MD_FEATURE_NEW_OFFSET		64 /* new_offset must be honoured */
-#define	MD_FEATURE_BITMAP_VERSIONED	256 /* bitmap version number checked properly */
-#define	MD_FEATURE_JOURNAL		512 /* support write journal */
-#define	MD_FEATURE_PPL			1024 /* support PPL */
-#define	MD_FEATURE_MUTLIPLE_PPLS	2048 /* support for multiple PPLs */
-#define	MD_FEATURE_RAID0_LAYOUT		4096 /* layout is meaningful in RAID0 */
-#define	MD_FEATURE_ALL			(MD_FEATURE_BITMAP_OFFSET	\
-					|MD_FEATURE_RECOVERY_OFFSET	\
-					|MD_FEATURE_RESHAPE_ACTIVE	\
-					|MD_FEATURE_BAD_BLOCKS		\
-					|MD_FEATURE_REPLACEMENT		\
-					|MD_FEATURE_RESHAPE_BACKWARDS	\
-					|MD_FEATURE_NEW_OFFSET		\
-					|MD_FEATURE_BITMAP_VERSIONED	\
-					|MD_FEATURE_JOURNAL		\
-					|MD_FEATURE_PPL			\
-					|MD_FEATURE_MULTIPLE_PPLS	\
-					|MD_FEATURE_RAID0_LAYOUT	\
-					)
 
 static int role_from_sb(struct mdp_superblock_1 *sb)
 {
@@ -319,7 +199,7 @@ static int awrite(struct align_fd *afd, void *buf, int len)
 static inline unsigned int md_feature_any_ppl_on(__u32 feature_map)
 {
 	return ((__cpu_to_le32(feature_map) &
-	    (MD_FEATURE_PPL | MD_FEATURE_MUTLIPLE_PPLS)));
+	    (MD_FEATURE_PPL | MD_FEATURE_MULTIPLE_PPLS)));
 }
 
 static inline unsigned int choose_ppl_space(int chunk)
@@ -748,7 +628,7 @@ static int copy_metadata1(struct supertype *st, int from, int to)
 		goto err;
 	}
 
-	if (lseek64(from, sb_offset << 9, 0) < 0LL)
+	if (lseek(from, sb_offset << 9, 0) < 0LL)
 		goto err;
 	if (read(from, buf, bufsize) != bufsize)
 		goto err;
@@ -762,7 +642,7 @@ static int copy_metadata1(struct supertype *st, int from, int to)
 	    calc_sb_1_csum(sb) != super.sb_csum)
 		goto err;
 
-	if (lseek64(to, sb_offset << 9, 0) < 0LL)
+	if (lseek(to, sb_offset << 9, 0) < 0LL)
 		goto err;
 	if (write(to, buf, bufsize) != bufsize)
 		goto err;
@@ -778,9 +658,9 @@ static int copy_metadata1(struct supertype *st, int from, int to)
 
 		bitmap_offset += (int32_t)__le32_to_cpu(super.bitmap_offset);
 
-		if (lseek64(from, bitmap_offset<<9, 0) < 0)
+		if (lseek(from, bitmap_offset<<9, 0) < 0)
 			goto err;
-		if (lseek64(to, bitmap_offset<<9, 0) < 0)
+		if (lseek(to, bitmap_offset<<9, 0) < 0)
 			goto err;
 
 		for (written = 0; written < bytes ; ) {
@@ -819,9 +699,9 @@ static int copy_metadata1(struct supertype *st, int from, int to)
 
 		bb_offset += (int32_t)__le32_to_cpu(super.bblog_offset);
 
-		if (lseek64(from, bb_offset<<9, 0) < 0)
+		if (lseek(from, bb_offset<<9, 0) < 0)
 			goto err;
-		if (lseek64(to, bb_offset<<9, 0) < 0)
+		if (lseek(to, bb_offset<<9, 0) < 0)
 			goto err;
 
 		for (written = 0; written < bytes ; ) {
@@ -923,7 +803,7 @@ static int examine_badblocks_super1(struct supertype *st, int fd, char *devname)
 	offset = __le64_to_cpu(sb->super_offset) +
 		(int)__le32_to_cpu(sb->bblog_offset);
 	offset <<= 9;
-	if (lseek64(fd, offset, 0) < 0) {
+	if (lseek(fd, offset, 0) < 0) {
 		pr_err("Cannot seek to bad-blocks list\n");
 		free(bbl);
 		return 1;
@@ -1222,7 +1102,8 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 			snprintf(info->name, sizeof(info->name), "%d", info->array.md_minor);
 		memset(sb->set_name, 0, sizeof(sb->set_name));
 
-		namelen = strnlen(homehost, MD_NAME_MAX) + 1 + strnlen(info->name, MD_NAME_MAX);
+		namelen = (homehost ? strnlen(homehost, MD_NAME_MAX) : 0)
+			+ 1 + strnlen(info->name, MD_NAME_MAX);
 		if (homehost &&
 		    strchr(info->name, ':') == NULL &&
 		    namelen < MD_NAME_MAX) {
@@ -1483,7 +1364,7 @@ static int update_super1(struct supertype *st, struct mdinfo *info,
 	}
 	case UOPT_NO_PPL:
 		sb->feature_map &= ~__cpu_to_le32(MD_FEATURE_PPL |
-						   MD_FEATURE_MUTLIPLE_PPLS);
+						  MD_FEATURE_MULTIPLE_PPLS);
 		break;
 	case UOPT_DEVICESIZE:
 		if (__le64_to_cpu(sb->super_offset) >=
@@ -1677,6 +1558,10 @@ static int init_super1(struct supertype *st, mdu_array_info_t *info,
 		       sizeof(sb->set_name) - namelen);
 	}
 
+	if (info->level == 0 && info->layout == UnSet)
+		/* Metadata chooses default layout for RAID0 */
+		info->layout = RAID0_ORIG_LAYOUT;
+
 	sb->ctime = __cpu_to_le64((unsigned long long)time(0));
 	sb->level = __cpu_to_le32(info->level);
 	sb->layout = __cpu_to_le32(info->layout);
@@ -1817,7 +1702,7 @@ static int store_super1(struct supertype *st, int fd)
 		abort();
 	}
 
-	if (lseek64(fd, sb_offset << 9, 0)< 0LL)
+	if (lseek(fd, sb_offset << 9, 0) < 0LL)
 		return 3;
 
 	sbsize = ROUND_UP(sizeof(*sb) + 2 * __le32_to_cpu(sb->max_dev), 512);
@@ -1886,7 +1771,7 @@ static int write_init_ppl1(struct supertype *st, struct mdinfo *info, int fd)
 						      sizeof(sb->set_uuid)));
 	ppl_hdr->checksum = __cpu_to_le32(~crc32c_le(~0, buf, PPL_HEADER_SIZE));
 
-	if (lseek64(fd, info->ppl_sector * 512, SEEK_SET) < 0) {
+	if (lseek(fd, info->ppl_sector * 512, SEEK_SET) < 0) {
 		ret = errno;
 		perror("Failed to seek to PPL header location");
 	}
@@ -1931,7 +1816,7 @@ static int write_empty_r5l_meta_block(struct supertype *st, int fd)
 	crc = crc32c_le(crc, (void *)mb, META_BLOCK_SIZE);
 	mb->checksum = crc;
 
-	if (lseek64(fd, __le64_to_cpu(sb->data_offset) * 512, 0) < 0LL) {
+	if (lseek(fd, __le64_to_cpu(sb->data_offset) * 512, 0) < 0LL) {
 		pr_err("cannot seek to offset of the meta block\n");
 		goto fail_to_write;
 	}
@@ -1970,6 +1855,9 @@ static int write_init_super1(struct supertype *st)
 	unsigned long long data_offset;
 	long bm_offset;
 	bool raid0_need_layout = false;
+
+	/* Clear extra flags */
+	sb->feature_map &= ~__cpu_to_le32(MD_FEATURE_BAD_BLOCKS | MD_FEATURE_REPLACEMENT);
 
 	/* Since linux kernel v5.4, raid0 always has a layout */
 	if (has_raid0_layout(sb) && get_linux_version() >= 5004000)
@@ -2297,7 +2185,7 @@ static int load_super1(struct supertype *st, int fd, char *devname)
 		return -EINVAL;
 	}
 
-	if (lseek64(fd, sb_offset << 9, 0)< 0LL) {
+	if (lseek(fd, sb_offset << 9, 0) < 0LL) {
 		if (devname)
 			pr_err("Cannot seek to superblock on %s: %s\n",
 				devname, strerror(errno));
@@ -2643,7 +2531,7 @@ add_internal_bitmap1(struct supertype *st,
 	bms->nodes = __cpu_to_le32(st->nodes);
 	if (st->nodes)
 		sb->feature_map = __cpu_to_le32(__le32_to_cpu(sb->feature_map) |
-						MD_FEATURE_BITMAP_VERSIONED);
+						MD_FEATURE_CLUSTERED);
 	if (st->cluster_name) {
 		len = sizeof(bms->cluster_name);
 		strncpy((char *)bms->cluster_name, st->cluster_name, len);
@@ -2682,7 +2570,7 @@ static int locate_bitmap1(struct supertype *st, int fd, int node_num)
 	}
 	if (mustfree)
 		free(sb);
-	if (lseek64(fd, offset<<9, 0) < 0) {
+	if (lseek(fd, offset<<9, 0) < 0) {
 		pr_err("lseek fails\n");
 		ret = -1;
 	}

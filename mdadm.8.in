@@ -5,7 +5,7 @@
 .\"   the Free Software Foundation; either version 2 of the License, or
 .\"   (at your option) any later version.
 .\" See file COPYING in distribution for details.
-.TH MDADM 8 "" v4.4
+.TH MDADM 8 "" v4.5
 .SH NAME
 mdadm \- manage MD devices
 .I aka
@@ -740,27 +740,11 @@ parameter and are stored internally.
 .B none
 - create array with no bitmap or remove any present bitmap (grow mode).
 
-Setting bitmap for file is deprecated and should not be used. The file should not exist unless
-.B \-\-force
-is also given. The same file should be provided when assembling the array. The file name must
-contain at least one slash ('/'). Bitmap files are only known to work on ext2 and ext3. Storing
-bitmap files on other filesystems may result in serious problems.
-
-When creating an array on devices which are 100G or larger,
-.I mdadm
-automatically adds an internal bitmap as it will usually be
-beneficial.  This can be suppressed with
-.B "\-\-bitmap=none"
-or by selecting a different consistency policy with
-.BR \-\-consistency\-policy .
-
 .TP
 .BR \-\-bitmap\-chunk=
 Set the chunk size of the bitmap.  Each bit corresponds to that many
 Kilobytes of storage.
-When using a file-based bitmap, the default is to use the smallest
-size that is at least 4 and requires no more than 2^21 chunks.
-When using an
+
 .B internal
 bitmap, the chunk size defaults to 64Meg, or larger if necessary to
 fit the bitmap into the available space.
@@ -897,38 +881,11 @@ different versions of
 are used to add different devices).
 
 .TP
-.BR \-\-continue
-This option is complementary to the
-.B \-\-freeze-reshape
-option for assembly. It is needed when
-.B \-\-grow
-operation is interrupted and it is not restarted automatically due to
-.B \-\-freeze-reshape
-usage during array assembly.  This option is used together with
-.BR \-G
-, (
-.BR \-\-grow
-) command and device for a pending reshape to be continued.
-All parameters required for reshape continuation will be read from array metadata.
-If initial
-.BR \-\-grow
-command had required
-.BR \-\-backup\-file=
-option to be set, continuation option will require to have exactly the same
-backup file given as well.
-.IP
-Any other parameter passed together with
-.BR \-\-continue
-option will be ignored.
-
-.TP
 .BR \-N ", " \-\-name=
 Set a
 .B name
-for the array. It must be
-.BR "POSIX PORTABLE NAME"
-compatible and cannot be longer than 32 chars. This is effective when creating an array
-with a v1 metadata, or an external array.
+for the array. It cannot be longer than 32 chars. This is effective when
+creating an array with a v1 metadata, or an external array.
 
 If name is needed but not specified, it is taken from the basename of the device
 that is being created. See
@@ -1032,6 +989,21 @@ Can be used with \-\-grow to change the consistency policy of an active array
 in some cases. See CONSISTENCY POLICY CHANGES below.
 .RE
 
+.TP
+.BR \-\-logical\-block\-size=
+The option can only be used in Create mode and metadata version is 1.x. If during
+creation, the member disks have mixed LBS values (512 and 4K), the array will
+default to using 4K as its LBS. However, if the 4K disk is removed and the system
+is rebooted, the array's LBS will fall back to 512. If the array's LBS is 512,
+then a disk with a 4K LBS cannot be added to the array.
+
+In general, choosing a large LBS for the array is beneficial, but it can
+introduce write-amplification. The larger the array's LBS, the larger the write
+size to each member disk. Therefore, users should evaluate their actual workload
+and choose an appropriate LBS accordingly.
+
+The option should be set by the user based on their own usage scenario, choosing
+an LBS value that best matches their needs.
 
 .SH For assemble:
 
@@ -1065,11 +1037,9 @@ is much safer.
 
 .TP
 .BR \-N ", " \-\-name=
-Specify the name of the array to assemble. It must be
-.BR "POSIX PORTABLE NAME"
-compatible and cannot be longer than 32 chars. This must be the name
-that was specified when creating the array. It must either match
-the name stored in the superblock exactly, or it must match
+Specify the name of the array to assemble. It cannot be longer than 32 chars.
+This must be the name that was specified when creating the array. It must
+either match the name stored in the superblock exactly, or it must match
 with the current
 .I homehost
 prefixed to the start of the given name.
@@ -1107,13 +1077,6 @@ are present.  This is only needed with
 .B \-\-scan,
 and can be used if the physical connections to devices are
 not as reliable as you would like.
-
-.TP
-.BR \-b ", " \-\-bitmap=
-Specify the bitmap file that was given when the array was created.  If
-an array has an
-.B internal
-bitmap, there is no need to specify this when assembling the array.
 
 .TP
 .BR \-\-backup\-file=
@@ -1324,18 +1287,6 @@ or
 .B layout\-alternate
 and allows the array to be again used on a kernel prior to Linux 5.3.
 This option should be used with great caution.
-
-.TP
-.BR \-\-freeze\-reshape
-This option is intended to be used in start-up scripts during the initrd boot phase.
-When the array under reshape is assembled during the initrd phase, this option
-stops the reshape after the reshape-critical section has been restored. This happens
-before the file system pivot operation and avoids loss of filesystem context.
-Losing file system context would cause reshape to be broken.
-
-Reshape can be continued later using the
-.B \-\-continue
-option for the grow command.
 
 .SH For Manage mode:
 
@@ -1614,9 +1565,8 @@ applies to a whole array which is currently active.
 
 .TP
 .BR \-X ", " \-\-examine\-bitmap
-Report information about a bitmap file.
-The argument is either an external bitmap file or an array component
-in case of an internal bitmap.  Note that running this on an array
+Report information about a bitmap.
+The argument is an array component. Note that running this on an array
 device (e.g.
 .BR /dev/md0 )
 does not report the bitmap for that array.
@@ -1774,10 +1724,7 @@ Only meaningful with
 this will scan the
 .B map
 file for arrays that are being incrementally assembled and will try to
-start any that are not already started.  If any such array is listed
-in
-.B mdadm.conf
-as requiring an external bitmap, that bitmap will be attached first.
+start any that are not already started.
 
 .TP
 .BR \-\-fail ", " \-f
@@ -2151,15 +2098,7 @@ setting.
 .\".B \-\-size
 .\"is given, the apparent size of the smallest drive given is used.
 
-If the array type supports a write-intent bitmap, and if the devices
-in the array exceed 100G is size, an internal write-intent bitmap
-will automatically be added unless some other option is explicitly
-requested with the
-.B \-\-bitmap
-option or a different consistency policy is selected with the
-.B \-\-consistency\-policy
-option. In any case, space for a bitmap will be reserved so that one
-can be added later with
+Space for a bitmap will be reserved so that one can be added later with
 .BR "\-\-grow \-\-bitmap=internal" .
 
 If the metadata type supports it (currently only 1.x and IMSM metadata),
@@ -2308,10 +2247,8 @@ and
 
 The
 .B name
-option updates the subarray name in the metadata. It must be
-.BR "POSIX PORTABLE NAME"
-compatible and cannot be longer than 32 chars. If successes, new value will be respected after
-next assembly.
+option updates the subarray name in the metadata. It cannot be longer than
+32 chars. If successes, new value will be respected after next assembly.
 
 The
 .B ppl
@@ -2735,11 +2672,6 @@ Also, the size of an array cannot be changed while it has an active
 bitmap.  If an array has a bitmap, it must be removed before the size
 can be changed. Once the change is complete a new bitmap can be created.
 
-.PP
-Note:
-.B "--grow --size"
-is not yet supported for external file bitmap.
-
 .SS RAID\-DEVICES CHANGES
 
 A RAID1 array can work with any number of devices from 1 upwards
@@ -2834,10 +2766,7 @@ stored on the device being reshaped.
 .SS BITMAP CHANGES
 
 A write-intent bitmap can be added to, or removed from, an active
-array.  Either internal bitmaps, or bitmaps stored in a separate file,
-can be added.  Note that if you add a bitmap stored in a file which is
-in a filesystem that is on the RAID array being affected, the system
-will deadlock.  The bitmap must be on a separate filesystem.
+array.
 
 .SS CONSISTENCY POLICY CHANGES
 
@@ -3294,9 +3223,7 @@ can be given, or just the suffix of the second sort of name, such as
 .I home
 can be given.
 
-In every style, raw name must be compatible with
-.BR "POSIX PORTABLE NAME"
-and has to be no longer than 32 chars.
+In every style, raw name has to be no longer than 32 chars.
 
 When
 .I mdadm
