@@ -1,5 +1,8 @@
-Tests: test-installed
-Restrictions: needs-root, isolation-machine
+Tests:
+ test-installed,
+Restrictions:
+ isolation-machine,
+ needs-root,
 Depends:
  fdisk,
  kmod,

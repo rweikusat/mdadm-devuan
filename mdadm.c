@@ -30,6 +30,7 @@
 #include "xmalloc.h"
 
 #include <ctype.h>
+#include <limits.h>
 
 /**
  * set_bitmap_value() - set bitmap value.
@@ -76,6 +77,33 @@ static mdadm_status_t set_bitmap_value(struct shape *s, struct context *c, char 
 	return MDADM_STATUS_ERROR;
 }
 
+/*
+ * Logical block size settings only support metadata 1.x.
+ */
+static mdadm_status_t shape_set_logical_block_size(struct shape *s, char *optarg)
+{
+	char *end;
+	unsigned long size = strtoul(optarg, &end, 10);
+
+	if (end != optarg + strlen(optarg)) {
+		pr_err("logical block size [%s] can't be converted to an integer\n", optarg);
+		return MDADM_STATUS_ERROR;
+	} else if (errno == ERANGE) {
+		pr_err("logical block size [%s] more than ULONG_MAX\n", optarg);
+		return MDADM_STATUS_ERROR;
+	}
+
+	/* Here only perform a simple check, while detailed check will be handled in kernel */
+	if (size == 0 || size > UINT_MAX) {
+		pr_err("The range of logical-block-size is (0, %u], current is %lu\n",
+				UINT_MAX, size);
+		return MDADM_STATUS_ERROR;
+	}
+
+	s->logical_block_size = size;
+	return MDADM_STATUS_SUCCESS;
+}
+
 static int scan_assemble(struct supertype *ss,
 			 struct context *c,
 			 struct mddev_ident *ident);
@@ -107,6 +135,7 @@ int main(int argc, char *argv[])
 	int grow_continue = 0;
 	struct context c = {
 		.require_homehost = 1,
+		.metadata = NULL,
 	};
 	struct shape s = {
 		.journaldisks	= 0,
@@ -116,6 +145,7 @@ int main(int argc, char *argv[])
 		.consistency_policy	= CONSISTENCY_POLICY_UNKNOWN,
 		.data_offset = INVALID_SECTORS,
 		.btype		= BitmapUnknown,
+		.logical_block_size = 0,
 	};
 
 	char sys_hostname[256];
@@ -445,6 +475,7 @@ int main(int argc, char *argv[])
 				pr_err("unrecognised metadata identifier: %s\n", optarg);
 				exit(2);
 			}
+			c.metadata = optarg;
 			continue;
 
 		case O(MANAGE,'W'):
@@ -709,12 +740,6 @@ int main(int argc, char *argv[])
 		case O(MISC,Force): /* force zero */
 		case O(MANAGE,Force): /* add device which is too large */
 			c.force = 1;
-			continue;
-			/* now for the Assemble options */
-		case O(ASSEMBLE, FreezeReshape):   /* Freeze reshape during
-						    * initrd phase */
-		case O(INCREMENTAL, FreezeReshape):
-			c.freeze_reshape = 1;
 			continue;
 		case O(CREATE,'u'): /* uuid of array */
 		case O(ASSEMBLE,'u'): /* uuid of array */
@@ -1191,6 +1216,10 @@ int main(int argc, char *argv[])
 				exit(2);
 			}
 			continue;
+		case O(CREATE, LogicalBlockSize):
+			if (shape_set_logical_block_size(&s, optarg) != MDADM_STATUS_SUCCESS)
+				exit(2);
+			continue;
 		}
 		/* We have now processed all the valid options. Anything else is
 		 * an error
@@ -1204,6 +1233,18 @@ int main(int argc, char *argv[])
 				opt, map_num_s(modes, mode));
 		exit(2);
 
+	}
+
+	/* When metadata is not specified using the -e option,
+	 * metadata version is 1.2 by default. So the logical
+	 * block size can be configured.
+	 * When using the -e option, need to check if the
+	 * metadata version is 1.x.
+	 */
+	if (s.logical_block_size && ss && strcmp(ss->ss->name, "1.x")){
+		pr_err("The logical block size is only supported for metadata 1.x.\n");
+		pr_err("Current metadata version is %s\n", ss->ss->name);
+		exit(2);
 	}
 
 	if (print_help) {
@@ -1430,10 +1471,10 @@ int main(int argc, char *argv[])
 				if (mdfd >= 0)
 					close(mdfd);
 			} else {
-				rv |= Assemble(ss, ident.devname, array_ident, NULL, &c);
+				rv |= Assemble(ident.devname, array_ident, NULL, &c);
 			}
 		} else if (!c.scan)
-			rv = Assemble(ss, ident.devname, &ident, devlist->next, &c);
+			rv = Assemble(ident.devname, &ident, devlist->next, &c);
 		else if (devs_found > 0) {
 			if (c.update && devs_found > 1) {
 				pr_err("can only update a single array at a time\n");
@@ -1451,7 +1492,7 @@ int main(int argc, char *argv[])
 					rv |= 1;
 					continue;
 				}
-				rv |= Assemble(ss, dv->devname, array_ident, NULL, &c);
+				rv |= Assemble(dv->devname, array_ident, NULL, &c);
 			}
 		} else {
 			if (c.update) {
@@ -1528,7 +1569,7 @@ int main(int argc, char *argv[])
 
 		if (s.btype == BitmapUnknown) {
 			if (c.runstop != 1 && s.level >= 1 &&
-			    ask("To optimalize recovery speed, it is recommended to enable write-indent bitmap, do you want to enable it now?"))
+			    ask("To optimize recovery speed, it is recommended to enable write-intent bitmap, do you want to enable it now?"))
 				s.btype = BitmapInternal;
 			else
 				s.btype = BitmapNone;
@@ -1625,7 +1666,7 @@ int main(int argc, char *argv[])
 		if (devs_found > 1 && s.raiddisks == 0 && s.level == UnSet) {
 			/* must be '-a'. */
 			if (s.size > 0 || s.chunk ||
-			    s.layout_str || s.btype != BitmapNone) {
+			    s.layout_str || s.btype != BitmapUnknown) {
 				pr_err("--add cannot be used with other geometry changes in --grow mode\n");
 				rv = 1;
 				break;
@@ -1743,7 +1784,7 @@ static int scan_assemble(struct supertype *ss,
 			if (a->devname && is_devname_ignore(a->devname) == true)
 				continue;
 
-			r = Assemble(ss, a->devname,
+			r = Assemble(a->devname,
 				     a, NULL, c);
 			if (r == 0) {
 				a->assembled = 1;
@@ -1766,7 +1807,7 @@ static int scan_assemble(struct supertype *ss,
 			struct mddev_dev *devlist = conf_get_devs();
 			acnt = 0;
 			do {
-				rv2 = Assemble(ss, NULL,
+				rv2 = Assemble(NULL,
 					       ident,
 					       devlist, c);
 				if (rv2 == 0) {

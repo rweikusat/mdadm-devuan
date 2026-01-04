@@ -272,6 +272,10 @@ struct phys_disk {
 #define	DDF_ReadErrors			32
 #define	DDF_Missing			64
 
+
+#define SEARCH_BLOCK_SIZE  4096
+#define SEARCH_REGION_SIZE (32 * 1024 * 1024)
+
 /* The content of the virt_section global scope */
 struct virtual_disk {
 	be32	magic;		/* DDF_VIRT_RECORDS_MAGIC */
@@ -811,7 +815,7 @@ static int load_ddf_header(int fd, unsigned long long lba,
 	if (lba >= size-1)
 		return 0;
 
-	if (lseek64(fd, lba << 9, 0) == -1L)
+	if (lseek(fd, lba << 9, 0) == -1L)
 		return 0;
 
 	if (read(fd, hdr, 512) != 512)
@@ -864,7 +868,7 @@ static void *load_section(int fd, struct ddf_super *super, void *buf,
 	else
 		offset += be64_to_cpu(super->active->secondary_lba);
 
-	if ((unsigned long long)lseek64(fd, offset << 9, 0) != (offset << 9)) {
+	if ((unsigned long long)lseek(fd, offset << 9, 0) != (offset << 9)) {
 		if (dofree)
 			free(buf);
 		return NULL;
@@ -877,30 +881,180 @@ static void *load_section(int fd, struct ddf_super *super, void *buf,
 	return buf;
 }
 
-static int load_ddf_headers(int fd, struct ddf_super *super, char *devname)
+
+/*
+ * Search for DDF_HEADER_MAGIC in the last 32MB of the device
+ *
+ * According to the specification, the Anchor Header should be placed at
+ * the end of the disk. However,some widely used RAID hardware, such as
+ * LSI and PERC, do not position it within the last 512 bytes of the disk.
+ *
+ */
+static int search_for_ddf_headers(int fd, char *devname,
+				  unsigned long long *out)
 {
+	unsigned long long search_start;
+	unsigned long long search_end;
+	size_t bytes_block_to_read;
 	unsigned long long dsize;
+	unsigned long long pos;
+	int bytes_current_read;
+	size_t offset;
+
+	void *buffer = NULL;
+	be32 *magic_ptr = NULL;
+
+	int result = 0;
 
 	get_dev_size(fd, NULL, &dsize);
 
-	if (lseek64(fd, dsize - 512, 0) == -1L) {
-		if (devname)
-			pr_err("Cannot seek to anchor block on %s: %s\n",
+
+	/* Determine the search range */
+	if (dsize > SEARCH_REGION_SIZE)
+		search_start = dsize - SEARCH_REGION_SIZE;
+	else
+		search_start = 0;
+
+	search_end = dsize;
+	pos = search_start;
+
+
+	buffer = xmemalign(SEARCH_BLOCK_SIZE, SEARCH_BLOCK_SIZE);
+
+	if (buffer == NULL) {
+		result = 1;
+		goto cleanup;
+	}
+
+	while (pos < search_end) {
+		/* Calculate the number of bytes to read in the current block */
+		bytes_block_to_read = SEARCH_BLOCK_SIZE;
+		if (search_end - pos < SEARCH_BLOCK_SIZE)
+			bytes_block_to_read = search_end - pos;
+
+		if (lseek(fd, pos, SEEK_SET) < 0) {
+			pr_err("lseek for %s failed %d:%s\n",
+				fd2devnm(fd), errno, strerror(errno));
+			result = 2;
+			goto cleanup;
+		}
+
+		/*Read data from the device */
+		bytes_current_read = read(fd, buffer, bytes_block_to_read);
+
+		if (bytes_current_read <= 0) {
+			pr_err("Failed to read %s. %d:%s, Position=%llu, Bytes to read=%zu. Skipping.\n",
+			       fd2devnm(fd), errno, strerror(errno), pos, bytes_block_to_read);
+			pos += SEARCH_BLOCK_SIZE;	/* Skip to the next block */
+			continue;
+		}
+
+		/* Search for the magic value within the read block */
+		for (offset = 0;
+		    offset + sizeof(be32) <= (size_t)bytes_current_read;
+		    offset += sizeof(be32)) {
+
+			magic_ptr = (be32 *) ((char *)buffer + offset);
+			if (be32_eq(*magic_ptr, DDF_HEADER_MAGIC)) {
+				*out = pos + offset;
+				result = 0;
+				goto cleanup;
+			}
+		}
+
+		pos += SEARCH_BLOCK_SIZE;
+	}
+
+cleanup:
+	free(buffer);
+	return result;
+}
+
+static int load_ddf_headers(int fd, struct ddf_super *super, char *devname)
+{
+	/*
+	 * Load DDF headers from a device.
+	 * First, check at dsize - 512, and if not found, search for it.
+	 */
+	unsigned long long dsize = 0;
+	unsigned long long ddfpos = 0;
+	unsigned long long ddffound = 0;
+	bool found_anchor = false;
+
+	get_dev_size(fd, NULL, &dsize);
+
+	/* Check the last 512 bytes for the DDF header. */
+	if (lseek(fd, dsize - 512, SEEK_SET) == -1L) {
+		if (devname) {
+			pr_err("Cannot seek to last 512 bytes on %s: %s\n",
 			       devname, strerror(errno));
+		}
 		return 1;
 	}
-	if (read(fd, &super->anchor, 512) != 512) {
-		if (devname)
-			pr_err("Cannot read anchor block on %s: %s\n",
+
+
+	/* Read the last 512 bytes into the anchor block */
+	if (read(fd, &super->anchor, 512) == 512) {
+		/* Check if the magic value matches */
+		if (be32_eq(super->anchor.magic, DDF_HEADER_MAGIC))
+			found_anchor = true;
+
+	} else {
+		if (devname) {
+			pr_err("Cannot read last 512 bytes on %s: %s\n",
 			       devname, strerror(errno));
-		return 1;
+		}
 	}
-	if (!be32_eq(super->anchor.magic, DDF_HEADER_MAGIC)) {
+
+	if (!found_anchor) {
+		/* If not found, perform a full search for DDF headers */
+		ddffound = search_for_ddf_headers(fd, devname, &ddfpos);
+		if (ddffound != 0) {
+			if (devname) {
+				pr_err
+				    ("DDF headers not found during search on %s\n",
+				     devname);
+			}
+			return 2;
+		}
+
+		/* Seek to the found position */
+		if (lseek(fd, ddfpos, SEEK_SET) == -1L) {
+			if (devname) {
+				pr_err("Cannot seek to anchor block on %s\n",
+					devname);
+			}
+			return 1;
+		}
+
+		/* Read the header from the found position */
+		if (read(fd, &super->anchor, 512) != 512) {
+			if (devname) {
+				pr_err
+				    ("Cannot read DDF header at found position on %s: %s\n",
+				     devname, strerror(errno));
+			}
+			return 1;
+		}
+
+		/* Verify the magic value again */
+		if (!be32_eq(super->anchor.magic, DDF_HEADER_MAGIC)) {
+			if (devname) {
+				pr_err("Invalid DDF header magic value on %s\n",
+				       devname);
+			}
+			return 2;
+		}
+		found_anchor = true;
+	}
+	if (!found_anchor) {
+
 		if (devname)
-			pr_err("no DDF anchor found on %s\n",
-				devname);
+			pr_err("DDF headers not found on %s\n", devname);
+
 		return 2;
 	}
+
 	if (!be32_eq(calc_crc(&super->anchor, 512), super->anchor.crc)) {
 		if (devname)
 			pr_err("bad CRC on anchor on %s\n",
@@ -1054,6 +1208,8 @@ static int load_ddf_local(int fd, struct ddf_super *super,
 	dl->devname = devname ? xstrdup(devname) : NULL;
 
 	if (fstat(fd, &stb) != 0) {
+		if (dl->devname)
+			free(dl->devname);
 		free(dl);
 		return 1;
 	}
@@ -1170,6 +1326,8 @@ static int load_super_ddf(struct supertype *st, int fd,
 	struct ddf_super *super;
 	int rv;
 
+	free_super_ddf(st);
+
 	if (get_dev_size(fd, devname, &dsize) == 0)
 		return 1;
 
@@ -1190,8 +1348,6 @@ static int load_super_ddf(struct supertype *st, int fd,
 			       devname, dsize);
 		return 1;
 	}
-
-	free_super_ddf(st);
 
 	if (posix_memalign((void**)&super, 512, sizeof(*super))!= 0) {
 		pr_err("malloc of %zu failed.\n",
@@ -1452,9 +1608,9 @@ static void examine_vd(int n, struct ddf_super *sb, char *guid)
 			       map_num(ddf_sec_level, vc->srl) ?: "-unknown-");
 		}
 		printf("  Device Size[%d] : %llu\n", n,
-		       be64_to_cpu(vc->blocks)/2);
+		       (unsigned long long)(be64_to_cpu(vc->blocks)/2));
 		printf("   Array Size[%d] : %llu\n", n,
-		       be64_to_cpu(vc->array_blocks)/2);
+		       (unsigned long long)(be64_to_cpu(vc->array_blocks)/2));
 	}
 }
 
@@ -1511,7 +1667,7 @@ static void examine_pds(struct ddf_super *sb)
 		printf("       %3d    %08x  ", i,
 		       be32_to_cpu(pd->refnum));
 		printf("%8lluK ",
-		       be64_to_cpu(pd->config_size)>>1);
+				(unsigned long long)be64_to_cpu(pd->config_size)>>1);
 		for (dl = sb->dlist; dl ; dl = dl->next) {
 			if (be32_eq(dl->disk.refnum, pd->refnum)) {
 				char *dv = map_dev(dl->major, dl->minor, 0);
@@ -1695,7 +1851,7 @@ static int copy_metadata_ddf(struct supertype *st, int from, int to)
 	if (!get_dev_size(from, NULL, &dsize))
 		goto err;
 
-	if (lseek64(from, dsize - 512, 0) == -1L)
+	if (lseek(from, dsize - 512, 0) == -1L)
 		goto err;
 
 	if (read(from, buf, 512) != 512)
@@ -1716,7 +1872,7 @@ static int copy_metadata_ddf(struct supertype *st, int from, int to)
 
 	bytes = dsize - offset;
 
-	if (lseek64(from, offset, 0) == -1L || lseek64(to, offset, 0) == -1L)
+	if (lseek(from, offset, 0) == -1L || lseek(to, offset, 0) == -1L)
 		goto err;
 
 	while (written < bytes) {
@@ -2747,7 +2903,8 @@ static unsigned int find_unused_pde(const struct ddf_super *ddf)
 static void _set_config_size(struct phys_disk_entry *pde, const struct dl *dl)
 {
 	__u64 cfs, t;
-	cfs = min(dl->size - 32*1024*2ULL, be64_to_cpu(dl->primary_lba));
+	cfs = min((unsigned long long)dl->size - 32*1024*2ULL,
+			(unsigned long long)(be64_to_cpu(dl->primary_lba)));
 	t = be64_to_cpu(dl->secondary_lba);
 	if (t != ~(__u64)0)
 		cfs = min(cfs, t);
@@ -2977,7 +3134,7 @@ static int __write_ddf_structure(struct dl *d, struct ddf_super *ddf, __u8 type)
 	header->openflag = 1;
 	header->crc = calc_crc(header, 512);
 
-	if (lseek64(fd, sector << 9, 0) == -1L)
+	if (lseek(fd, sector << 9, 0) == -1L)
 		goto out;
 
 	if (write(fd, header, 512) < 0)
@@ -3044,7 +3201,7 @@ out:
 	header->openflag = 0;
 	header->crc = calc_crc(header, 512);
 
-	if (lseek64(fd, sector << 9, 0) == -1L)
+	if (lseek(fd, sector << 9, 0) == -1L)
 		return 0;
 
 	if (write(fd, header, 512) < 0)
@@ -3099,7 +3256,7 @@ static int _write_super_to_disk(struct ddf_super *ddf, struct dl *d)
 	if (!__write_ddf_structure(d, ddf, DDF_HEADER_SECONDARY))
 		return 0;
 
-	if (lseek64(fd, (size - 1) * 512, SEEK_SET) == -1L)
+	if (lseek(fd, (size - 1) * 512, SEEK_SET) == -1L)
 		return 0;
 
 	if (write(fd, &ddf->anchor, 512) < 0)
@@ -3889,16 +4046,17 @@ static int store_super_ddf(struct supertype *st, int fd)
 		dl->fd = ofd;
 		return ret;
 	}
+	// this is used for cleanup (Kill). to clean up 512 bytes
+	// at the end of the disk is not enough.
+	// clears SEARCH_REGION_SIZE bytes at the end of the disk.
 
-	if (posix_memalign(&buf, 512, 512) != 0)
-		return 1;
-	memset(buf, 0, 512);
-
-	if (lseek64(fd, dsize - 512, 0) == -1L) {
+	buf = xmemalign(SEARCH_BLOCK_SIZE, SEARCH_REGION_SIZE);
+	memset(buf, 0, SEARCH_REGION_SIZE);
+	if (lseek(fd, dsize - SEARCH_REGION_SIZE, 0) == -1L) {
 		free(buf);
 		return 1;
 	}
-	rc = write(fd, buf, 512);
+	rc = write(fd, buf, SEARCH_REGION_SIZE);
 	free(buf);
 	if (rc < 0)
 		return 1;
@@ -5195,6 +5353,22 @@ static void default_geometry_ddf(struct supertype *st, int *level, int *layout, 
 		*layout = ddf_level_to_layout(*level);
 }
 
+static int update_super_ddf_dummy(struct supertype *st, struct mdinfo *info,
+			 enum update_opt update,
+			 char *devname, int verbose,
+			 int uuid_set, char *homehost)
+{
+	/*
+	 * A dummy update_super function is required to ensure
+	 * reliable handling of DDF metadata in mdadm.
+	 * This implementation acts as a placeholder for cases
+	 * where ss->update_super is not verified.
+	 */
+	dprintf("update_super is not implemented in DDF\n");
+	return 0;
+
+}
+
 struct superswitch super_ddf = {
 	.examine_super	= examine_super_ddf,
 	.brief_examine_super = brief_examine_super_ddf,
@@ -5212,6 +5386,8 @@ struct superswitch super_ddf = {
 	.match_home	= match_home_ddf,
 	.uuid_from_super= uuid_from_super_ddf,
 	.getinfo_super  = getinfo_super_ddf,
+
+	.update_super = update_super_ddf_dummy,
 
 	.avail_size	= avail_size_ddf,
 

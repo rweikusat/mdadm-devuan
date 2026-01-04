@@ -332,12 +332,12 @@ static int copy_metadata0(struct supertype *st, int from, int to)
 
 	offset *= 512;
 
-	if (lseek64(from, offset, 0) < 0LL)
+	if (lseek(from, offset, 0) < 0LL)
 		goto err;
 	if (read(from, buf, bufsize) != bufsize)
 		goto err;
 
-	if (lseek64(to, offset, 0) < 0LL)
+	if (lseek(to, offset, 0) < 0LL)
 		goto err;
 	super = buf;
 	if (super->md_magic != MD_SB_MAGIC ||
@@ -837,6 +837,7 @@ struct devinfo {
 	int fd;
 	char *devname;
 	mdu_disk_info_t disk;
+	unsigned long long dev_size;
 	struct devinfo *next;
 };
 
@@ -866,6 +867,10 @@ static int add_to_super0(struct supertype *st, mdu_disk_info_t *dinfo,
 	di->devname = devname;
 	di->disk = *dinfo;
 	di->next = NULL;
+
+	if (is_fd_valid(fd))
+		get_dev_size(fd, NULL, &di->dev_size);
+
 	*dip = di;
 
 	return 0;
@@ -890,7 +895,7 @@ static int store_super0(struct supertype *st, int fd)
 		offset = dsize/512 - 8*2;
 		offset &= ~(4*2-1);
 		offset *= 512;
-		if (lseek64(fd, offset, 0)< 0LL)
+		if (lseek(fd, offset, 0) < 0LL)
 			ret = 3;
 		else if (write(fd, st->other, 1024) != 1024)
 			ret = 4;
@@ -905,7 +910,7 @@ static int store_super0(struct supertype *st, int fd)
 
 	offset *= 512;
 
-	if (lseek64(fd, offset, 0)< 0LL)
+	if (lseek(fd, offset, 0) < 0LL)
 		return 3;
 
 	if (write(fd, super, sizeof(*super)) != sizeof(*super))
@@ -928,6 +933,33 @@ static int write_init_super0(struct supertype *st)
 	mdp_super_t *sb = st->sb;
 	int rv = 0;
 	struct devinfo *di;
+
+	if (sb->level == 0 && sb->layout == UnSet) {
+		/* Without requesting a dangerous (0) layout
+		 * we can only allow this RAID0 if all devices are
+		 * the same size
+		 */
+		unsigned long long chunks = 0;
+		unsigned long chunk_sectors = sb->chunk_size >> 9;
+
+		for (di = st->info; di; di = di->next) {
+			unsigned long long this_chunks;
+
+			this_chunks = st->ss->avail_size(st, di->dev_size, 0) / chunk_sectors;
+
+			if (chunks == 0) {
+				chunks = this_chunks;
+				continue;
+			}
+
+			if (this_chunks != chunks) {
+				pr_err("Need explicit layout=dangerous to create 0.90 raid0 on non-uniform sized devices\n");
+				return 1;
+			}
+		}
+		/* looks safe */
+		sb->layout = 0;
+	}
 
 	for (di = st->info ; di && ! rv ; di = di->next) {
 
@@ -1032,7 +1064,7 @@ static int load_super0(struct supertype *st, int fd, char *devname)
 
 	offset *= 512;
 
-	if (lseek64(fd, offset, 0)< 0LL) {
+	if (lseek(fd, offset, 0) < 0LL) {
 		if (devname)
 			pr_err("Cannot seek to superblock on %s: %s\n",
 				devname, strerror(errno));
@@ -1217,7 +1249,7 @@ static int locate_bitmap0(struct supertype *st, int fd, int node_num)
 
 	offset += MD_SB_BYTES;
 
-	if (lseek64(fd, offset, 0) < 0)
+	if (lseek(fd, offset, 0) < 0)
 		return -1;
 	return 0;
 }
@@ -1243,7 +1275,7 @@ static int write_bitmap0(struct supertype *st, int fd, enum bitmap_update update
 
 	offset *= 512;
 
-	if (lseek64(fd, offset + 4096, 0)< 0LL)
+	if (lseek(fd, offset + 4096, 0) < 0LL)
 		return 3;
 
 	if (posix_memalign(&buf, 4096, 4096))
@@ -1321,7 +1353,7 @@ static int validate_geometry0(struct supertype *st, int level,
 	if (*chunk == UnSet)
 		*chunk = DEFAULT_CHUNK;
 
-	if (level == 0 && layout != UnSet) {
+	if (level == 0 && layout != UnSet && layout != RAID0_DANGEROUS_LAYOUT) {
 		if (verbose)
 			pr_err("0.90 metadata does not support layouts for RAID0\n");
 		return 0;

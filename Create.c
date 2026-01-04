@@ -23,8 +23,6 @@
  */
 
 #include	"mdadm.h"
-#include	"md_u.h"
-#include	"md_p.h"
 #include	"udev.h"
 #include	"xmalloc.h"
 
@@ -77,7 +75,7 @@ int default_layout(struct supertype *st, int level, int verbose)
 		layout = 0;
 		break;
 	case 0:
-		layout = RAID0_ORIG_LAYOUT;
+		/* Leave unset - metadata handlers choose default */
 		break;
 	case 10:
 		layout = 0x102; /* near=2, far=1 */
@@ -1283,6 +1281,14 @@ int Create(struct supertype *st, struct mddev_ident *ident, int subdevs,
 				goto abort;
 			}
 		} else {
+			if (s->logical_block_size &&
+				sysfs_set_num(&info, NULL, "logical_block_size",
+							  s->logical_block_size)) {
+				pr_err("Failed to set logical_block_size %u\n",
+						s->logical_block_size);
+				goto abort;
+			}
+
 			/* param is not actually used */
 			mdu_param_t param;
 			if (ioctl(mdfd, RUN_ARRAY, &param)) {
@@ -1318,8 +1324,8 @@ int Create(struct supertype *st, struct mddev_ident *ident, int subdevs,
 	} else {
 		pr_err("not starting array - not enough devices.\n");
 	}
-	udev_unblock();
 	close(mdfd);
+	udev_unblock();
 	sysfs_uevent(&info, "change");
 	dev_policy_free(custom_pols);
 
