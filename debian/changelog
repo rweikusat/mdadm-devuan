@@ -1,3 +1,17 @@
+mdadm (4.5-1) sid; urgency=medium
+
+  * Updating to standards version 4.7.3.
+  * Wrap and sorting debian files.
+  * Merging upstream version 4.5.
+  * Updating years in copyright for 2026.
+  * Refreshing randomize-timers.patch.
+  * Removing xmalloc-ftbfs.patch, included upstream.
+  * Removing monitor-nonabsolute-devnames.patch, included upstream.
+  * Removing monitor-memory-leak.patch, included upstream.
+  * Removing manpage-remove-bitmap.patch, included upstream.
+
+ -- Daniel Baumann <daniel@debian.org>  Sun, 04 Jan 2026 07:27:28 +0100
+
 mdadm (4.4-14) sid; urgency=medium
 
   * Removing rules-requires-root, not needed anymore.
