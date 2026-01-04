@@ -9,4 +9,3 @@ debian/0009-systemd-honor-debconf-daily-scan.patch
 debian/0010-mdcheck-fix-empty-spaces-in-timer-unit-files.patch
 debian/0011-systemd-directory.patch
 debian/0012-bin-directory.patch
-upstream/0001-manpage-remove-bitmap.patch
