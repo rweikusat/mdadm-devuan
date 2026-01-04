@@ -28,10 +28,10 @@
 #include "mdadm.h"
 
 #ifndef VERSION
-#define VERSION "4.4"
+#define VERSION "4.5"
 #endif
 #ifndef VERS_DATE
-#define VERS_DATE "2024-11-07"
+#define VERS_DATE "2025-12-16"
 #endif
 #ifndef EXTRAVERSION
 #define EXTRAVERSION ""
@@ -149,6 +149,7 @@ struct option long_options[] = {
 	{"home-cluster", 1, 0, ClusterName},
 	{"write-journal", 1, 0, WriteJournal},
 	{"consistency-policy", 1, 0, 'k'},
+	{"logical-block-size", 1, 0, LogicalBlockSize},
 
 	/* For assemble */
 	{"uuid", 1, 0, 'u'},
@@ -158,7 +159,6 @@ struct option long_options[] = {
 	{"scan", 0, 0, 's'},
 	{"force", 0, 0, Force},
 	{"update", 1, 0, 'U'},
-	{"freeze-reshape", 0, 0, FreezeReshape},
 
 	/* Management */
 	{"add", 0, 0, Add},
@@ -332,6 +332,7 @@ char Help_create[] =
 "  --consistency-policy= : Specify the policy that determines how the array\n"
 "                     -k : maintains consistency in case of unexpected shutdown.\n"
 "  --write-zeroes        : Write zeroes to the disks before creating. This will bypass initial sync.\n"
+"  --logical-block-size= : Set the logical block size (in Byte) for the RAID.\n"
 "\n"
 ;
 

@@ -23,8 +23,6 @@
  */
 
 #include	"mdadm.h"
-#include	"md_p.h"
-#include	"md_u.h"
 #include	"xmalloc.h"
 
 #include	<ctype.h>
@@ -290,6 +288,9 @@ int Detail(char *dev, struct context *c)
 
 		map_free(map);
 		if (st && st->sb) {
+			if (info)
+				printf("MD_RESHAPE_ACTIVE=%s\n",
+				       info->reshape_active ? "True" : "False");
 			if (st->ss->export_detail_super)
 				st->ss->export_detail_super(st);
 		}

@@ -693,6 +693,8 @@ int check_raid(int fd, char *name)
 		/* Looks like GPT or MBR */
 		pr_err("partition table exists on %s\n", name);
 	}
+
+	free(st);
 	return 1;
 }
 
@@ -972,7 +974,8 @@ static bool is_devname_numbered(const char *devname, const char *pref, const int
 	if (parse_num(&val, devname + pref_len) != 0)
 		return false;
 
-	if (val > 1024)
+	/* Allow any number that represents a valid minor number */
+	if (val >= (1 << 20))
 		return false;
 
 	return true;
@@ -1808,12 +1811,11 @@ int hot_remove_disk(int mdfd, unsigned long dev, int force)
 
 int sys_hot_remove_disk(int statefd, int force)
 {
-	static const char val[] = "remove";
 	int cnt = force ? 500 : 5;
 
 	while (cnt--) {
 		int err = 0;
-		int ret = sysfs_write_descriptor(statefd, val, strlen(val), &err);
+		int ret = sysfs_set_memb_state_fd(statefd, MEMB_STATE_REMOVE, &err);
 
 		if (ret == MDADM_STATUS_SUCCESS)
 			return 0;
@@ -1983,7 +1985,7 @@ int start_mdmon(char *devnm)
 
 	if (check_env("MDADM_NO_MDMON"))
 		return 0;
-	if (continue_via_systemd(devnm, MDMON_SERVICE, prefix))
+	if (continue_via_systemd(devnm, MDMON_SERVICE, prefix) == MDADM_STATUS_SUCCESS)
 		return 0;
 
 	/* That failed, try running mdmon directly */
@@ -2300,35 +2302,41 @@ void manage_fork_fds(int close_all)
 /* In a systemd/udev world, it is best to get systemd to
  * run daemon rather than running in the background.
  * Returns:
- *	1- if systemd service has been started
- *	0- otherwise
+ *	MDADM_STATUS_SUCCESS - if systemd service has been started.
+ *	MDADM_STATUS_ERROR - otherwise.
  */
-int continue_via_systemd(char *devnm, char *service_name, char *prefix)
+mdadm_status_t continue_via_systemd(char *devnm, char *service_name, char *prefix)
 {
 	int pid, status;
-	char pathbuf[1024];
+	char pathbuf[PATH_MAX];
 
+	dprintf("Start %s service\n", service_name);
 	/* Simply return that service cannot be started */
 	if (check_env("MDADM_NO_SYSTEMCTL"))
-		return 0;
+		return MDADM_STATUS_ERROR;
+
+	/* Fork in attempt to start services */
 	switch (fork()) {
-	case  0:
-		manage_fork_fds(1);
-		snprintf(pathbuf, sizeof(pathbuf),
-			 "%s@%s%s.service", service_name, prefix ?: "", devnm);
-		status = execl("/usr/bin/systemctl", "systemctl", "restart",
-			       pathbuf, NULL);
-		status = execl("/bin/systemctl", "systemctl", "restart",
-			       pathbuf, NULL);
-		exit(1);
-	case -1: /* Just do it ourselves. */
+	case -1: /* Fork failed, just do it ourselves. */
 		break;
-	default: /* parent - good */
+	case  0: /* child */
+		manage_fork_fds(1);
+		snprintf(pathbuf, sizeof(pathbuf), "%s@%s%s.service",
+			 service_name, prefix ? prefix : "", devnm);
+
+		/* Attempt to start service.
+		 * On success execl() will "kill" the fork, and return status of systemctl call.
+		 */
+		execl("/usr/bin/systemctl", "systemctl", "restart", pathbuf, NULL);
+		execl("/bin/systemctl", "systemctl", "restart", pathbuf, NULL);
+		exit(MDADM_STATUS_ERROR);
+	default: /* parent */
+		/* Check if forked process successfully trigered service */
 		pid = wait(&status);
 		if (pid >= 0 && status == 0)
-			return 1;
+			return MDADM_STATUS_SUCCESS;
 	}
-	return 0;
+	return MDADM_STATUS_ERROR;
 }
 
 int in_initrd(void)
@@ -2450,7 +2458,7 @@ int zero_disk_range(int fd, unsigned long long sector, size_t count)
 		return -1;
 	}
 
-	if (lseek64(fd, sector * 512, SEEK_SET) < 0) {
+	if (lseek(fd, sector * 512, SEEK_SET) < 0) {
 		ret = -errno;
 		pr_err("Failed to seek offset for zeroing\n");
 		goto out;
@@ -2550,4 +2558,49 @@ bool is_file(const char *path)
 		return false;
 
 	return true;
+}
+
+bool set_md_mod_parameter(const char *name, const char *value)
+{
+	char path[256];
+	int fd;
+	bool ret = true;
+
+	snprintf(path, sizeof(path), "/sys/module/md_mod/parameters/%s", name);
+
+	fd = open(path, O_WRONLY);
+	if (fd < 0) {
+		pr_err("Can't open %s\n", path);
+		return false;
+	}
+
+	if (write(fd, value, strlen(value)) != (ssize_t)strlen(value)) {
+		pr_err("Failed to write to %s\n", path);
+		ret = false;
+	}
+
+	close(fd);
+	return ret;
+}
+
+/* Init kernel md_mod parameters here if needed */
+bool init_md_mod_param(void)
+{
+	bool ret = true;
+
+	/*
+	 * In kernel 9e59d609763f calls del_gendisk in sync way. So device
+	 * node can be removed after stop command. But it can introduce a
+	 * regression which can be fixed by github pr182. New mdadm version
+	 * with pr182 can work well with new kernel. But users who don't
+	 * update mdadm and update to new kernel, they can't assemble array
+	 * anymore. So kernel adds a kernel parameter legacy_async_del_gendisk
+	 * and uses async as default.
+	 * We'll use sync mode since 6.18 rather than async mode. So in future
+	 * the kernel parameter will be removed.
+	 */
+	if (get_linux_version() >= 6018000)
+		ret = set_md_mod_parameter(MD_MOD_ASYNC_DEL_GENDISK, "N");
+
+	return ret;
 }

@@ -31,16 +31,6 @@
 # define "CXFLAGS" to give extra flags to CC.
 # e.g.  make CXFLAGS=-O to optimise
 CXFLAGS ?=-O2 -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE
-TCC = tcc
-UCLIBC_GCC = $(shell for nm in i386-uclibc-linux-gcc i386-uclibc-gcc; do which $$nm > /dev/null && { echo $$nm ; exit; } ; done; echo false No uclibc found )
-#DIET_GCC = diet gcc
-# sorry, but diet-libc doesn't know about posix_memalign,
-# so we cannot use it any more.
-DIET_GCC = gcc -DHAVE_STDINT_H
-
-KLIBC=/home/src/klibc/klibc-0.77
-
-KLIBC_GCC = gcc -nostdinc -iwithprefix include -I$(KLIBC)/klibc/include -I$(KLIBC)/linux/include -I$(KLIBC)/klibc/arch/i386/include -I$(KLIBC)/klibc/include/bits32
 
 ifdef COVERITY
 COVERITY_FLAGS=-include coverity-gcc-hack.h
@@ -172,6 +162,7 @@ MANDIR  = /usr/share/man
 MAN4DIR = $(MANDIR)/man4
 MAN5DIR = $(MANDIR)/man5
 MAN8DIR = $(MANDIR)/man8
+MISCDIR = /usr/share/mdadm
 
 UDEVDIR := $(shell $(PKG_CONFIG) --variable=udevdir udev 2>/dev/null)
 ifndef UDEVDIR
@@ -211,6 +202,15 @@ MON_SRCS = $(patsubst %.o,%.c,$(MON_OBJS))
 STATICSRC = pwgr.c
 STATICOBJS = pwgr.o
 
+UDEV_RULES = 01-md-raid-creating.rules 63-md-raid-arrays.rules 64-md-raid-assembly.rules \
+		69-md-clustered-confirm-device.rules
+SYSTEMD_UNITS = mdmon@.service mdmonitor.service mdadm-last-resort@.timer \
+		mdadm-last-resort@.service mdadm-grow-continue@.service \
+		mdcheck_start.timer mdcheck_start.service \
+		mdcheck_continue.timer mdcheck_continue.service \
+		mdmonitor-oneshot.timer mdmonitor-oneshot.service
+
+
 all : mdadm mdmon
 man : mdadm.man md.man mdadm.conf.man mdmon.man raid6check.man
 
@@ -225,8 +225,6 @@ everything: all swap_super test_stripe raid6check \
 	mdadm.Os mdadm.O2 man
 everything-test: all swap_super test_stripe \
 	mdadm.Os mdadm.O2 man
-# mdadm.uclibc doesn't work on x86-64
-# mdadm.tcc doesn't work..
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(COVERITY_FLAGS) -o $@ -c $<
@@ -236,13 +234,6 @@ mdadm : $(OBJS) | check_rundir
 
 mdadm.static : $(OBJS) $(STATICOBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -static -o mdadm.static $(OBJS) $(STATICOBJS) $(LDLIBS)
-
-mdadm.tcc : $(SRCS) $(INCL)
-	$(TCC) -o mdadm.tcc $(SRCS)
-
-mdadm.klibc : $(SRCS) $(INCL)
-	rm -f $(OBJS)
-	$(CC) -nostdinc -iwithprefix include -I$(KLIBC)/klibc/include -I$(KLIBC)/linux/include -I$(KLIBC)/klibc/arch/i386/include -I$(KLIBC)/klibc/include/bits32 $(CFLAGS) $(SRCS)
 
 mdadm.Os : $(SRCS) $(INCL)
 	$(CC) -o mdadm.Os $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -DHAVE_STDINT_H -Os $(SRCS) $(LDLIBS)
@@ -298,15 +289,6 @@ install : install-bin install-man install-udev
 install-static : mdadm.static install-man
 	$(INSTALL) -D $(STRIP) -m 755 mdadm.static $(DESTDIR)$(BINDIR)/mdadm
 
-install-tcc : mdadm.tcc install-man
-	$(INSTALL) -D $(STRIP) -m 755 mdadm.tcc $(DESTDIR)$(BINDIR)/mdadm
-
-install-uclibc : mdadm.uclibc install-man
-	$(INSTALL) -D $(STRIP) -m 755 mdadm.uclibc $(DESTDIR)$(BINDIR)/mdadm
-
-install-klibc : mdadm.klibc install-man
-	$(INSTALL) -D $(STRIP) -m 755 mdadm.klibc $(DESTDIR)$(BINDIR)/mdadm
-
 install-man: mdadm.8 md.4 mdadm.conf.5 mdmon.8
 	$(INSTALL) -D -m 644 mdadm.8 $(DESTDIR)$(MAN8DIR)/mdadm.8
 	$(INSTALL) -D -m 644 mdmon.8 $(DESTDIR)$(MAN8DIR)/mdmon.8
@@ -315,8 +297,7 @@ install-man: mdadm.8 md.4 mdadm.conf.5 mdmon.8
 
 install-udev: udev-md-raid-arrays.rules udev-md-raid-assembly.rules udev-md-raid-creating.rules \
 		udev-md-clustered-confirm-device.rules 
-	@for file in 01-md-raid-creating.rules 63-md-raid-arrays.rules 64-md-raid-assembly.rules \
-		69-md-clustered-confirm-device.rules ; \
+	@for file in $(UDEV_RULES); \
 	do sed -e 's,BINDIR,$(BINDIR),g' udev-$${file#??-} > .install.tmp.1 && \
 	   $(ECHO) $(INSTALL) -D -m 644 udev-$${file#??-} $(DESTDIR)$(UDEVDIR)/rules.d/$$file ; \
 	   $(INSTALL) -D -m 644 .install.tmp.1 $(DESTDIR)$(UDEVDIR)/rules.d/$$file ; \
@@ -324,13 +305,8 @@ install-udev: udev-md-raid-arrays.rules udev-md-raid-assembly.rules udev-md-raid
 	done
 
 install-systemd: systemd/mdmon@.service
-	@for file in mdmon@.service mdmonitor.service mdadm-last-resort@.timer \
-		mdadm-last-resort@.service mdadm-grow-continue@.service \
-		mdcheck_start.timer mdcheck_start.service \
-		mdcheck_continue.timer mdcheck_continue.service \
-		mdmonitor-oneshot.timer mdmonitor-oneshot.service \
-		; \
-	do sed -e 's,BINDIR,$(BINDIR),g' systemd/$$file > .install.tmp.2 && \
+	@for file in $(SYSTEMD_UNITS); \
+	do sed -e 's,BINDIR,$(BINDIR),g;s,MISCDIR,$(MISCDIR),g' systemd/$$file > .install.tmp.2 && \
 	   $(ECHO) $(INSTALL) -D -m 644 systemd/$$file $(DESTDIR)$(SYSTEMD_DIR)/$$file ; \
 	   $(INSTALL) -D -m 644 .install.tmp.2 $(DESTDIR)$(SYSTEMD_DIR)/$$file ; \
 	   rm -f .install.tmp.2; \
@@ -341,22 +317,33 @@ install-systemd: systemd/mdmon@.service
 	   $(INSTALL) -D -m 755  .install.tmp.3 $(DESTDIR)$(SYSTEMD_DIR)-shutdown/$$file ; \
 	   rm -f .install.tmp.3; \
 	done
+	@for file in mdcheck ; \
+	do sed -e 's,BINDIR,$(BINDIR),g' misc/$$file > .install.tmp.4 && \
+	   $(ECHO) $(INSTALL) -D -m 755  misc/$$file $(DESTDIR)$(MISCDIR)/$$file ; \
+	   $(INSTALL) -D -m 755  .install.tmp.4 $(DESTDIR)$(MISCDIR)/$$file ; \
+	   rm -f .install.tmp.4; \
+	done
 
 install-bin: mdadm mdmon
 	$(INSTALL) -D $(STRIP) -m 755 mdadm $(DESTDIR)$(BINDIR)/mdadm
 	$(INSTALL) -D $(STRIP) -m 755 mdmon $(DESTDIR)$(BINDIR)/mdmon
 
 uninstall:
-	rm -f $(DESTDIR)$(MAN8DIR)/mdadm.8 $(DESTDIR)$(MAN8DIR)/mdmon.8 $(DESTDIR)$(MAN4DIR)/md.4 $(DESTDIR)$(MAN5DIR)/mdadm.conf.5 $(DESTDIR)$(BINDIR)/mdadm
+	rm -f $(DESTDIR)$(BINDIR)/mdadm $(DESTDIR)$(BINDIR)/mdmon
+	rm -f $(DESTDIR)$(MAN8DIR)/mdadm.8 $(DESTDIR)$(MAN8DIR)/mdmon.8 $(DESTDIR)$(MAN4DIR)/md.4 $(DESTDIR)$(MAN5DIR)/mdadm.conf.5
+	rm -f $(UDEV_RULES:%=$(DESTDIR)$(UDEVDIR)/rules.d/%)
+	rm -f $(SYSTEMD_UNITS:%=$(DESTDIR)$(SYSTEMD_DIR)/%)
+	rm -f $(DESTDIR)$(SYSTEMD_DIR)-shutdown/mdadm.shutdown
+	rm -f $(DESTDIR)$(MISCDIR)/mdcheck
 
 test: mdadm mdmon test_stripe swap_super raid6check
 	@echo "Please run './test' as root"
 
 clean :
 	rm -f mdadm mdmon $(OBJS) $(MON_OBJS) $(STATICOBJS) core *.man \
-	mdadm.tcc mdadm.uclibc mdadm.static *.orig *.porig *.rej *.alt \
-	.merge_file_* mdadm.Os mdadm.O2 mdmon.O2 swap_super init.cpio.gz \
-	mdadm.uclibc.static test_stripe raid6check raid6check.o mdmon mdadm.8
+	mdadm.static *.orig *.porig *.rej *.alt merge_file_* \
+	mdadm.Os mdadm.O2 mdmon.O2 swap_super init.cpio.gz \
+	test_stripe raid6check raid6check.o mdmon mdadm.8
 	rm -rf cov-int
 
 dist : clean

@@ -753,6 +753,7 @@ static int load_devices(struct devs *devices, char *devmap,
 			tst->ss->free_super(tst);
 			free(tst);
 			*stp = st;
+			free(best);
 			return -1;
 		}
 		close(dfd);
@@ -834,7 +835,6 @@ static int load_devices(struct devs *devices, char *devmap,
 				       inargv ? "the list" :
 				       "the\n      DEVICE list in mdadm.conf"
 					);
-				free(best);
 				*stp = st;
 				goto error;
 			}
@@ -857,6 +857,7 @@ error:
 	close(mdfd);
 	free(devices);
 	free(devmap);
+	free(best);
 	return -1;
 
 }
@@ -1307,10 +1308,8 @@ static int start_array(int mdfd,
 	return 1;
 }
 
-int Assemble(struct supertype *st, char *mddev,
-	     struct mddev_ident *ident,
-	     struct mddev_dev *devlist,
-	     struct context *c)
+int Assemble(char *mddev, struct mddev_ident *ident,
+	     struct mddev_dev *devlist, struct context *c)
 {
 	/*
 	 * The task of Assemble is to find a collection of
@@ -1397,6 +1396,7 @@ int Assemble(struct supertype *st, char *mddev,
 	char chosen_name[1024];
 	struct map_ent *map = NULL;
 	struct map_ent *mp;
+	struct supertype *st = NULL;
 
 	/*
 	 * If any subdevs are listed, then any that don't
@@ -1415,6 +1415,15 @@ int Assemble(struct supertype *st, char *mddev,
 		pr_err("No identity information available for %s - cannot assemble.\n",
 		       mddev ? mddev : "further assembly");
 		return 1;
+	}
+
+	if (c->metadata) {
+		for (i = 0; !st && superlist[i]; i++)
+			st = superlist[i]->match_metadata_desc(c->metadata);
+		if (!st) {
+			pr_err("unrecognised metadata identifier: %s\n", c->metadata);
+			return -EINVAL;
+		}
 	}
 
 	if (devlist == NULL)
@@ -1438,11 +1447,15 @@ try_again:
 		st->ignore_hw_compat = 1;
 	num_devs = select_devices(devlist, ident, &st, &content, c,
 				  inargv, auto_assem);
-	if (num_devs < 0)
-		return 1;
+	if (num_devs < 0) {
+		rv = 1;
+		goto free_st;
+	}
 
-	if (!st || !st->sb || !content)
-		return 2;
+	if (!st || !st->sb || !content) {
+		rv = 2;
+		goto free_st;
+	}
 
 	/* We have a full set of devices - we now need to find the
 	 * array device.
@@ -1569,18 +1582,15 @@ try_again:
 				goto try_again;
 			goto out;
 		}
-		/* just incase it was started but has no content */
-		ioctl(mdfd, STOP_ARRAY, NULL);
 	}
 
 	if (content != &info) {
 		/* This is a member of a container.  Try starting the array. */
-		int err;
-		err = assemble_container_content(st, mdfd, content, c,
+		rv = assemble_container_content(st, mdfd, content, c,
 						 chosen_name, NULL);
 		close(mdfd);
 		sysfs_free(pre_exist);
-		return err;
+		goto free_st;
 	}
 
 	/* Ok, no bad inconsistancy, we can try updating etc */
@@ -1938,10 +1948,20 @@ out:
 	/* '2' means 'OK, but not started yet' */
 	if (rv == -1) {
 		free(devices);
-		return 1;
+		rv = 1;
+		goto free_st;
 	}
 	close(mdfd);
-	return rv == 2 ? 0 : rv;
+
+	if (rv == 2)
+		rv = 0;
+free_st:
+	if (st) {
+		st->ss->free_super(st);
+		free(st);
+	}
+
+	return rv;
 }
 
 int assemble_container_content(struct supertype *st, int mdfd,
