@@ -1,0 +1,127 @@
+# Chinese (traditional) debconf translation of mdadm
+# Copyright (C) 2026 Yangfl <mmyangfl@gmail.com>
+# This file is distributed under the same license as the mdadm package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mdadm\n"
+"Report-Msgid-Bugs-To: mdadm@packages.debian.org\n"
+"POT-Creation-Date: 2025-01-23 07:30+0100\n"
+"PO-Revision-Date: 2026-01-06 07:19+0800\n"
+"Last-Translator: Yangfl <mmyangfl@gmail.com>\n"
+"Language-Team: 漢語 <debian-l10n-chinese@lists.debian.org>\n"
+"Language: zh_TW\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#. Type: note
+#. Description
+#: ../mdadm.templates:2001
+msgid "no systemd init-system detected"
+msgstr "未偵測到 systemd init-system"
+
+#. Type: note
+#. Description
+#: ../mdadm.templates:2001
+msgid ""
+"The root filesystem of this system was detected to be on a RAID device, so "
+"mdadm might be required to run during boot to properly start your system."
+msgstr ""
+"偵測到該系統的根檔案系統位於 RAID 裝置上，因此啟動時可能需要執行 mdadm 才能正"
+"確啟動系統。"
+
+#. Type: note
+#. Description
+#: ../mdadm.templates:2001
+msgid ""
+"Beginning with newer versions of the mdadm package, init-system integration "
+"is available for systemd only. This system seems to use an alternative init-"
+"system which might or might not leave your system unbootable and will not "
+"run any of the maintenance jobs automatically."
+msgstr ""
+"自新版 mdadm 軟體套件始，init-system 整合僅適用於 systemd。該系統似乎使用了一"
+"種替代 init-system，這可能會導致系統無法啟動，並且不會自動執行任何維護作業。"
+
+#. Type: boolean
+#. Description
+#: ../mdadm.templates:3001
+msgid "Should mdadm run monthly redundancy checks of the MD arrays?"
+msgstr "mdadm 是否應每月對 MD 陣列進行冗餘檢查？"
+
+#. Type: boolean
+#. Description
+#: ../mdadm.templates:3001
+msgid ""
+"If the kernel supports it (versions greater than 2.6.14), mdadm can "
+"periodically check the redundancy of MD arrays (RAIDs). This may be a "
+"resource-intensive process, depending on the local setup, but it could help "
+"prevent rare cases of data loss. Note that this is a read-only check unless "
+"errors are found; if errors are found, mdadm will try to correct them, which "
+"may result in write access to the media."
+msgstr ""
+"如果核心支援（版本高於 2.6.14），mdadm 可定期檢查 MD 陣列（RAID）的冗餘度。視"
+"本地配置不同，這可能是資源密集型過程，但它有助於防止極端情況下發生的資料遺"
+"失。請注意，除非發現錯誤，否則此檢查為唯讀檢查；如果發現錯誤，mdadm 將嘗試修"
+"正，且可能會向儲存媒體進行寫入。"
+
+#. Type: boolean
+#. Description
+#: ../mdadm.templates:3001
+msgid ""
+"The default, if turned on, is to check on the first Sunday of every month at "
+"01:06."
+msgstr "如果開啟此功能，預設在每個月第一個星期日的凌晨 01:06 進行檢查。"
+
+#. Type: boolean
+#. Description
+#: ../mdadm.templates:4001
+msgid "Should mdadm check once a day for degraded arrays?"
+msgstr "mdadm 是否應每天檢查一次陣列是否降級？"
+
+#. Type: boolean
+#. Description
+#: ../mdadm.templates:4001
+msgid ""
+"mdadm can check once a day for degraded arrays and missing spares to ensure "
+"that such events don't go unnoticed."
+msgstr ""
+"mdadm 可以每天檢查一次陣列是否降級，及備用組件是否缺失，以確保此類事件不會被"
+"忽視。"
+
+#. Type: boolean
+#. Description
+#: ../mdadm.templates:5001
+msgid "Do you want to start the MD monitoring daemon?"
+msgstr "是否啟動 MD 監控常駐程式？"
+
+#. Type: boolean
+#. Description
+#: ../mdadm.templates:5001
+msgid ""
+"The MD (RAID) monitor daemon sends email notifications in response to "
+"important MD events (such as a disk failure)."
+msgstr ""
+"MD（RAID）監控常駐程式會在發生重要的 MD 事件（例如磁碟故障）時發送電子郵件通"
+"知。"
+
+#. Type: boolean
+#. Description
+#: ../mdadm.templates:5001
+msgid "Enabling this option is recommended."
+msgstr "推薦啟用此選項。"
+
+#. Type: string
+#. Description
+#: ../mdadm.templates:6001
+msgid "Recipient for email notifications:"
+msgstr "郵件通知接收人："
+
+#. Type: string
+#. Description
+#: ../mdadm.templates:6001
+msgid ""
+"Please enter the email address of the user who should get the email "
+"notifications for important MD events."
+msgstr "請輸入用以接收重要 MD 事件郵件通知的電子郵件地址。"
