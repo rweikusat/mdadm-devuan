@@ -1,3 +1,12 @@
+mdadm (4.5-2) sid; urgency=medium
+
+  * Adding Chinese (simplified) debconf translations from Yangfl
+    <mmyangfl@gmail.com> (Closes: #1124731).
+  * Adding Chinese (traditional) debconf translations from Yangfl
+    <mmyangfl@gmail.com> (Closes: #1124731).
+
+ -- Daniel Baumann <daniel@debian.org>  Tue, 06 Jan 2026 07:34:33 +0100
+
 mdadm (4.5-1devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.5-1.
