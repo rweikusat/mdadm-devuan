@@ -1,3 +1,10 @@
+mdadm (4.5-3) sid; urgency=medium
+
+  * Cherry-picking patch from upstream to load md_mod first before setting
+    module parameter legacy_async_del_gendisk (Closes: #1125390).
+
+ -- Daniel Baumann <daniel@debian.org>  Wed, 04 Feb 2026 19:56:52 +0100
+
 mdadm (4.5-2) sid; urgency=medium
 
   * Adding Chinese (simplified) debconf translations from Yangfl
