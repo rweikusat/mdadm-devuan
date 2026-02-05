@@ -1,3 +1,9 @@
+mdadm (4.5-4devuan1) unstable; urgency=medium
+
+  * Merge tag debian/4.5-4.
+
+ -- Mark Hindley <mark@hindley.org.uk>  Thu, 05 Feb 2026 15:36:47 +0000
+
 mdadm (4.5-4) sid; urgency=medium
 
   * Always including efivarfs to have generic initramfs, thanks to Roland
