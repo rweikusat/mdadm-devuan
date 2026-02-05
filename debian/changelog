@@ -1,3 +1,10 @@
+mdadm (4.5-4) sid; urgency=medium
+
+  * Always including efivarfs to have generic initramfs, thanks to Roland
+    Clobus <rclobus@rclobus.nl> (Closes: #1114521).
+
+ -- Daniel Baumann <daniel@debian.org>  Thu, 05 Feb 2026 04:17:16 +0100
+
 mdadm (4.5-3) sid; urgency=medium
 
   * Cherry-picking patch from upstream to load md_mod first before setting
