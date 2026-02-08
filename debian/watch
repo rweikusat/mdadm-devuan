@@ -1,2 +1,5 @@
-version=4
-https://github.com/md-raid-utilities/mdadm/tags .*/mdadm-?(\d.*)@ARCHIVE_EXT@
+Version: 5
+
+Template: Github
+Owner: md-raid-utilities
+Project: @PACKAGE@
