@@ -1,0 +1,133 @@
+From 5f8872e64fa560e641ff454a815a34dc5d0c29a9 Mon Sep 17 00:00:00 2001
+From: Martin Wilck <mwilck@suse.com>
+Date: Thu, 12 Feb 2026 21:34:49 +0100
+Subject: [PATCH] mdadm.conf: add "PROBING ddf_extended" option
+
+Add a configuration line PROBING to mdadm.conf. If the parameter
+"ddf_extended" is set on this line, use the extended DDF header search
+introduced by commit f2197b6b6c14 ("super-ddf: optimize DDF header search
+for widely used RAID controllers"), at the cost of slower probing.
+Otherwise, just check for the header in the last sector of the disk,
+as usual.
+
+Signed-off-by: Martin Wilck <mwilck@suse.com>
+---
+ config.c        | 25 ++++++++++++++++++++++++-
+ mdadm.conf.5.in | 13 +++++++++++++
+ mdadm.h         |  1 +
+ super-ddf.c     |  2 +-
+ 4 files changed, 39 insertions(+), 2 deletions(-)
+
+diff --git a/config.c b/config.c
+index e6ede3bb..373acd48 100644
+--- a/config.c
++++ b/config.c
+@@ -83,7 +83,7 @@ char DefaultAltConfDir[] = CONFFILE2 ".d";
+ 
+ enum linetype { Devices, Array, Mailaddr, Mailfrom, Program, CreateDev,
+ 		Homehost, HomeCluster, AutoMode, Policy, PartPolicy, Sysfs,
+-		MonitorDelay, EncryptionNoVerify, LTEnd };
++		MonitorDelay, EncryptionNoVerify, Probing, LTEnd };
+ char *keywords[] = {
+ 	[Devices]  = "devices",
+ 	[Array]    = "array",
+@@ -99,6 +99,7 @@ char *keywords[] = {
+ 	[Sysfs]    = "sysfs",
+ 	[MonitorDelay] = "monitordelay",
+ 	[EncryptionNoVerify] = "ENCRYPTION_NO_VERIFY",
++	[Probing] = "probing",
+ 	[LTEnd]    = NULL
+ };
+ 
+@@ -689,6 +690,19 @@ void encryption_no_verify_line(char *line)
+ 	}
+ }
+ 
++static bool probing_ddf_extended;
++void probing_line(char *line)
++{
++	char *word;
++
++	for (word = dl_next(line); word != line; word = dl_next(word)) {
++		if (strcasecmp(word, "ddf_extended") == 0)
++			probing_ddf_extended = true;
++		else
++			pr_err("unrecognised word on PROBING line: %s\n", word);
++	}
++}
++
+ char auto_yes[] = "yes";
+ char auto_no[] = "no";
+ char auto_homehost[] = "homehost";
+@@ -876,6 +890,9 @@ void conf_file(FILE *f)
+ 		case EncryptionNoVerify:
+ 			encryption_no_verify_line(line);
+ 			break;
++		case Probing:
++			probing_line(line);
++			break;
+ 		default:
+ 			pr_err("Unknown keyword %s\n", line);
+ 		}
+@@ -1045,6 +1062,12 @@ bool conf_get_sata_opal_encryption_no_verify(void)
+ 	return sata_opal_encryption_no_verify;
+ }
+ 
++bool conf_get_probing_ddf_extended(void)
++{
++	load_conffile();
++	return probing_ddf_extended;
++}
++
+ struct createinfo *conf_get_create_info(void)
+ {
+ 	load_conffile();
+diff --git a/mdadm.conf.5.in b/mdadm.conf.5.in
+index 44aff743..6cb265ad 100644
+--- a/mdadm.conf.5.in
++++ b/mdadm.conf.5.in
+@@ -621,6 +621,19 @@ metadata.
+ Available parameter
+ .I "sata_opal".
+ 
++.TP
++.B PROBING
++The
++.B PROBING
++line provides options to configure device probing.
++.RS 4
++.TP
++.B ddf_extended
++Use extended algorithm to detect DDF headers on disks. Instead of looking for
++the DDF super block only in the last block of the device, scan the last 32
++MB. This allows detection of metadata created by some RAID controllers, at the
++cost of slower probing.
++.RE
+ 
+ .SH FILES
+ 
+diff --git a/mdadm.h b/mdadm.h
+index 40ada076..055d31e9 100644
+--- a/mdadm.h
++++ b/mdadm.h
+@@ -1639,6 +1639,7 @@ extern char *conf_get_homehost(int *require_homehostp);
+ extern char *conf_get_homecluster(void);
+ extern int conf_get_monitor_delay(void);
+ extern bool conf_get_sata_opal_encryption_no_verify(void);
++extern bool conf_get_probing_ddf_extended(void);
+ extern char *conf_line(FILE *file);
+ extern char *conf_word(FILE *file, int allow_key);
+ extern void print_quoted(char *str);
+diff --git a/super-ddf.c b/super-ddf.c
+index 657c53ab..85cc7a40 100644
+--- a/super-ddf.c
++++ b/super-ddf.c
+@@ -1006,7 +1006,7 @@ static int load_ddf_headers(int fd, struct ddf_super *super, char *devname)
+ 		}
+ 	}
+ 
+-	if (!found_anchor) {
++	if (!found_anchor && conf_get_probing_ddf_extended()) {
+ 		/* If not found, perform a full search for DDF headers */
+ 		ddffound = search_for_ddf_headers(fd, devname, &ddfpos);
+ 		if (ddffound != 0) {

@@ -1,3 +1,12 @@
+mdadm (4.5-5) sid; urgency=medium
+
+  * Updating watch file to version 5.
+  * Cherry-picking patch from upstream to fix probing non-DDF which in
+    turns fixes timeouts in dracut tests, thanks to Benjamin Drung
+    <bdrung@debian.org> for reporting (Closes: #1128401).
+
+ -- Daniel Baumann <daniel@debian.org>  Thu, 19 Feb 2026 12:45:48 +0100
+
 mdadm (4.5-4devuan1) unstable; urgency=medium
 
   * Merge tag debian/4.5-4.
