@@ -2,5 +2,6 @@ debian/local/apport/* usr/share/apport/package-hooks
 debian/local/bin/* usr/share/mdadm
 debian/local/initramfs-tools/* usr/share/initramfs-tools/scripts
 debian/local/reportbug/* usr/share/bug/mdadm
+lib/udev
 misc/mdcheck usr/share/mdadm/
 usr/
