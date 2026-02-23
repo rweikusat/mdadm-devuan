@@ -14,8 +14,8 @@ documented method of that time to build Debian packages, that is, run
 `fakeroot debian/rules binary`
 
 from the top-level source directory. This will automatically apply all
-patches in debian/patches if they weren't already applied. Applied
-patches will be removed when making the debian/rules `clean` target.
+patches in `debian/patches` if they weren't already applied. Applied
+patches will be removed when making the `debian/rules` `clean` target.
 
-Separate `targets` patch and `unpatch` exist to just apply or remove
+Separate targets `patch` and `unpatch` exist to just apply or remove
 patches without doing anything else.
