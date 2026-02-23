@@ -8,6 +8,9 @@ installed anymore but two are still part of the mdadm package.
 
 Building
 --------
+
+NB: This needs usrmerge installed to actually build.
+
 Since I've been a Debian user since 1998, I'm still using the
 documented method of that time to build Debian packages, that is, run
 
