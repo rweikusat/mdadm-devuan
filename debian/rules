@@ -42,7 +42,6 @@ override_dh_auto_clean: unpatch
 	done
 
 override_dh_install:
-	$(MAKE) install-systemd DESTDIR=$(CURDIR)/debian/tmp
 	dh_install
 	mkdir -p $(CURDIR)/debian/mdadm/etc/mdadm
 	chmod +x $(CURDIR)/debian/mdadm/usr/share/mdadm/mdcheck

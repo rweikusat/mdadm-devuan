@@ -1,4 +1,0 @@
-lib/udev/rules.d/01-md-raid-creating.rules
-lib/udev/rules.d/64-md-raid-assembly.rules
-lib/udev/rules.d/69-md-clustered-confirm-device.rules
-lib/systemd/*
