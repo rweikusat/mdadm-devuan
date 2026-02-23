@@ -18,7 +18,8 @@ export CONFFILE2="/etc/mdadm.conf"
 %:
 	dh $@
 
-execute_after_dh_auto_clean:
+override_dh_auto_clean:
+	dh_auto_clean
 	# remove generated files
 	for file in $$(find . -type f -name "*.in"); \
 	do \
