@@ -15,16 +15,17 @@ export EXTRAVERSION=$(DEB_VENDOR) $(DEB_VERSION)
 export CONFFILE="/etc/mdadm/mdadm.conf"
 export CONFFILE2="/etc/mdadm.conf"
 
-PATCHES=debian/patches
+PATCHES := debian/patches
+APPLD := .pc/applied-patches
 
-.pc/applied-patches:
+$(APPLD):
 	QUILT_PATCHES=$(PATCHES) quilt push -a
 
-patch: .pc/applied-patches
+patch: $(APPLD)
 	:
 
 unpatch:
-	quilt pop -a
+	test -f $(APPLD) && quilt pop -a || true
 
 override_dh_auto_build: patch
 	dh_auto_build
