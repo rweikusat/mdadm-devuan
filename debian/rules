@@ -25,7 +25,7 @@ patch: $(APPLD)
 	:
 
 unpatch:
-	test -f $(APPLD) && quilt pop -a || true
+	quilt pop -a || true
 
 override_dh_auto_build: patch
 	dh_auto_build
