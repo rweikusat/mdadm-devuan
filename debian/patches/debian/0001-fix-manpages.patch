@@ -2,10 +2,11 @@ Author: Felix Lechner <felix.lechner@lease-up.com>
 Description: Fix typos and macro issues in manpages
  (Closes: #915182, #916946, #962946, #933773).
 
-diff -Naurp mdadm.orig/md.4 mdadm/md.4
---- mdadm.orig/md.4
-+++ mdadm/md.4
-@@ -363,9 +363,9 @@ tab(;);
+Index: mdadm-devuan/md.4
+===================================================================
+--- mdadm-devuan.orig/md.4
++++ mdadm-devuan/md.4
+@@ -358,9 +358,9 @@ tab(;);
  ;Device #1;Device #2;Device #3;Device #4
  0x00;0;0;1;1
  0x01;2;2;3;3
@@ -17,7 +18,7 @@ diff -Naurp mdadm.orig/md.4 mdadm/md.4
  0x80;254;254;255;255
  ;\\---------v---------/;\\---------v---------/
  ;RAID1;RAID1
-@@ -392,9 +392,9 @@ C.
+@@ -387,9 +387,9 @@ C.
  ;Dev #1;Dev #2;Dev #3;Dev #4;Dev #5
  0x00;0;0;1;1;2
  0x01;2;3;3;4;4
@@ -29,7 +30,7 @@ diff -Naurp mdadm.orig/md.4 mdadm/md.4
  0x80;317;318;318;319;319
  ;
  .TE
-@@ -454,15 +454,15 @@ C.
+@@ -449,15 +449,15 @@ C.
  ;
  0x00;0;1;2;3;\\ 
  0x01;4;5;6;7;> [#]
@@ -49,7 +50,7 @@ diff -Naurp mdadm.orig/md.4 mdadm/md.4
  0x80;255;252;253;254;/
  ;
  .TE
-@@ -493,15 +493,15 @@ C.
+@@ -488,15 +488,15 @@ C.
  ;
  0x00;0;1;2;3;4;\\ 
  0x01;5;6;7;8;9;> [#]
@@ -69,7 +70,7 @@ diff -Naurp mdadm.orig/md.4 mdadm/md.4
  0x80;319;315;316;317;318;/
  ;
  .TE
-@@ -572,9 +572,9 @@ C.
+@@ -567,9 +567,9 @@ C.
  0x01;3;0;1;2;) AA~
  0x02;4;5;6;7;) AB
  0x03;7;4;5;6;) AB~
@@ -81,7 +82,7 @@ diff -Naurp mdadm.orig/md.4 mdadm/md.4
  0x79;251;252;253;254;) EX
  0x80;254;251;252;253;) EX~
  ;
-@@ -605,9 +605,9 @@ C.
+@@ -600,9 +600,9 @@ C.
  0x01;4;0;1;2;3;) AA~
  0x02;5;6;7;8;9;) AB
  0x03;9;5;6;7;8;) AB~
@@ -93,7 +94,7 @@ diff -Naurp mdadm.orig/md.4 mdadm/md.4
  0x79;314;315;316;317;318;) EX
  0x80;318;314;315;316;317;) EX~
  ;
-@@ -987,7 +987,7 @@ other device(s).
+@@ -969,7 +969,7 @@ other device(s).
  .I md
  cannot control the timeout that the underlying devices use to
  determine failure.  Any changes desired to that timeout must be set
@@ -102,9 +103,10 @@ diff -Naurp mdadm.orig/md.4 mdadm/md.4
  .IR mdadm .
  
  If a FAILFAST request does fail, and if it is still safe to mark the
-diff -Naurp mdadm.orig/mdadm.8.in mdadm/mdadm.8.in
---- mdadm.orig/mdadm.8.in
-+++ mdadm/mdadm.8.in
+Index: mdadm-devuan/mdadm.8.in
+===================================================================
+--- mdadm-devuan.orig/mdadm.8.in
++++ mdadm-devuan/mdadm.8.in
 @@ -459,11 +459,10 @@ number of spare devices.
  Amount (in Kilobytes) of space to use from each drive in RAID levels 1/4/5/6/10
  and for RAID 0 on external metadata.
@@ -121,7 +123,7 @@ diff -Naurp mdadm.orig/mdadm.8.in mdadm/mdadm.8.in
  
  A suffix of 'K', 'M', 'G' or 'T' can be given to indicate Kilobytes,
  Megabytes, Gigabytes or Terabytes respectively.
-@@ -1146,7 +1145,7 @@ out-of-date.  If
+@@ -1052,7 +1051,7 @@ out-of-date.  If
  cannot find enough working devices to start the array, but can find
  some devices that are recorded as having failed, then it will mark
  those devices as working so that the array can be started. This works only for
@@ -130,7 +132,7 @@ diff -Naurp mdadm.orig/mdadm.8.in mdadm/mdadm.8.in
  An array which requires
  .B \-\-force
  to be started may contain data corruption.  Use it carefully.
-@@ -1829,7 +1828,7 @@ Details of
+@@ -1688,7 +1687,7 @@ Details of
  .B check
  and
  .B repair
@@ -139,7 +141,7 @@ diff -Naurp mdadm.orig/mdadm.8.in mdadm/mdadm.8.in
  .IR md (4)
  under
  .BR "SCRUBBING AND MISMATCHES" .
-@@ -2955,7 +2954,8 @@ option in Grow mode. Currently this work
+@@ -2776,7 +2775,8 @@ option in Grow mode. Currently this work
  .B ppl
  and
  .B resync
@@ -149,9 +151,10 @@ diff -Naurp mdadm.orig/mdadm.8.in mdadm/mdadm.8.in
  
  .SH INCREMENTAL MODE
  
-diff -Naurp mdadm.orig/mdmon.8 mdadm/mdmon.8
---- mdadm.orig/mdmon.8
-+++ mdadm/mdmon.8
+Index: mdadm-devuan/mdmon.8
+===================================================================
+--- mdadm-devuan.orig/mdmon.8
++++ mdadm-devuan/mdmon.8
 @@ -115,7 +115,7 @@ container.  Some array management comman
  add are now only valid at the container level.  Attempts to perform
  these actions on member arrays are blocked with error messages like:

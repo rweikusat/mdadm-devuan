@@ -1,9 +1,10 @@
 Author: Dimitri John Ledkov <xnox@ubuntu.com>
 Description: Randomize md array check timers (LP: #1815201).
 
-diff -Naurp mdadm.orig/systemd/mdcheck_continue.timer mdadm/systemd/mdcheck_continue.timer
---- mdadm.orig/systemd/mdcheck_continue.timer
-+++ mdadm/systemd/mdcheck_continue.timer
+Index: mdadm-devuan/systemd/mdcheck_continue.timer
+===================================================================
+--- mdadm-devuan.orig/systemd/mdcheck_continue.timer
++++ mdadm-devuan/systemd/mdcheck_continue.timer
 @@ -9,7 +9,9 @@
  Description=MD array scrubbing - continuation
  
@@ -15,9 +16,10 @@ diff -Naurp mdadm.orig/systemd/mdcheck_continue.timer mdadm/systemd/mdcheck_cont
  
  [Install]
  WantedBy= mdmonitor.service
-diff -Naurp mdadm.orig/systemd/mdcheck_start.timer mdadm/systemd/mdcheck_start.timer
---- mdadm.orig/systemd/mdcheck_start.timer
-+++ mdadm/systemd/mdcheck_start.timer
+Index: mdadm-devuan/systemd/mdcheck_start.timer
+===================================================================
+--- mdadm-devuan.orig/systemd/mdcheck_start.timer
++++ mdadm-devuan/systemd/mdcheck_start.timer
 @@ -10,6 +10,8 @@ Description=MD array scrubbing
  
  [Timer]
@@ -27,9 +29,10 @@ diff -Naurp mdadm.orig/systemd/mdcheck_start.timer mdadm/systemd/mdcheck_start.t
  
  [Install]
  WantedBy= mdmonitor.service
-diff -Naurp mdadm.orig/systemd/mdmonitor-oneshot.service mdadm/systemd/mdmonitor-oneshot.service
---- mdadm.orig/systemd/mdmonitor-oneshot.service
-+++ mdadm/systemd/mdmonitor-oneshot.service
+Index: mdadm-devuan/systemd/mdmonitor-oneshot.service
+===================================================================
+--- mdadm-devuan.orig/systemd/mdmonitor-oneshot.service
++++ mdadm-devuan/systemd/mdmonitor-oneshot.service
 @@ -10,7 +10,4 @@ Description=Reminder for degraded MD arr
  Documentation=man:mdadm(8)
  
@@ -39,9 +42,10 @@ diff -Naurp mdadm.orig/systemd/mdmonitor-oneshot.service mdadm/systemd/mdmonitor
 -ExecStartPre=-/usr/lib/mdadm/mdadm_env.sh
 -ExecStart=BINDIR/mdadm --monitor --oneshot $MDADM_MONITOR_ARGS
 +ExecStart=BINDIR/mdadm --monitor --oneshot --scan
-diff -Naurp mdadm.orig/systemd/mdmonitor-oneshot.timer mdadm/systemd/mdmonitor-oneshot.timer
---- mdadm.orig/systemd/mdmonitor-oneshot.timer
-+++ mdadm/systemd/mdmonitor-oneshot.timer
+Index: mdadm-devuan/systemd/mdmonitor-oneshot.timer
+===================================================================
+--- mdadm-devuan.orig/systemd/mdmonitor-oneshot.timer
++++ mdadm-devuan/systemd/mdmonitor-oneshot.timer
 @@ -9,7 +9,9 @@
  Description=Reminder for degraded MD arrays
  

@@ -1,10 +1,11 @@
 Author: Chris Hofstaedtler <zeha@debian.org>
 Description: Patch Makefile to use /usr/sbin instead of /sbin.
 
-diff -Naurp mdadm.orig/Makefile mdadm/Makefile
---- mdadm.orig/Makefile
-+++ mdadm/Makefile
-@@ -146,7 +150,7 @@ endif
+Index: mdadm-devuan/Makefile
+===================================================================
+--- mdadm-devuan.orig/Makefile
++++ mdadm-devuan/Makefile
+@@ -161,7 +161,7 @@ endif
  
  INSTALL = /usr/bin/install
  DESTDIR =

@@ -15,11 +15,11 @@ Signed-off-by: Xiao Ni <xni@redhat.com>
  util.c   | 35 +++++++++++++++++++++++++++++++++--
  3 files changed, 40 insertions(+), 27 deletions(-)
 
-diff --git a/mdadm.h b/mdadm.h
-index b63dded3..9b7052da 100644
---- a/mdadm.h
-+++ b/mdadm.h
-@@ -860,7 +860,7 @@ extern int restore_stripes(int *dest, unsigned long long *offsets,
+Index: mdadm-devuan/mdadm.h
+===================================================================
+--- mdadm-devuan.orig/mdadm.h
++++ mdadm-devuan/mdadm.h
+@@ -860,7 +860,7 @@ extern int restore_stripes(int *dest, un
  			   unsigned long long start, unsigned long long length,
  			   char *src_buf);
  extern bool sysfs_is_libata_allow_tpm_enabled(const int verbose);
@@ -28,10 +28,10 @@ index b63dded3..9b7052da 100644
  
  #ifndef Sendmail
  #define Sendmail "/usr/lib/sendmail -t"
-diff --git a/mdopen.c b/mdopen.c
-index b685603d..9af0284b 100644
---- a/mdopen.c
-+++ b/mdopen.c
+Index: mdadm-devuan/mdopen.c
+===================================================================
+--- mdadm-devuan.orig/mdopen.c
++++ mdadm-devuan/mdopen.c
 @@ -38,33 +38,15 @@ int create_named_array(char *devnm)
  	};
  
@@ -71,7 +71,7 @@ index b685603d..9af0284b 100644
  		pr_err("Fail to create %s when using %s, fallback to creation via node\n",
  			devnm, new_array_file);
  		return 0;
-@@ -148,7 +130,7 @@ int create_mddev(char *dev, char *name, int trustworthy,
+@@ -148,7 +130,7 @@ int create_mddev(char *dev, char *name,
  	char devnm[32];
  	char cbuf[400];
  
@@ -80,11 +80,11 @@ index b685603d..9af0284b 100644
  		pr_err("init md module parameters fail\n");
  		return -1;
  	}
-diff --git a/util.c b/util.c
-index 146f38fd..cdc55435 100644
---- a/util.c
-+++ b/util.c
-@@ -2583,10 +2583,41 @@ bool set_md_mod_parameter(const char *name, const char *value)
+Index: mdadm-devuan/util.c
+===================================================================
+--- mdadm-devuan.orig/util.c
++++ mdadm-devuan/util.c
+@@ -2583,10 +2583,41 @@ bool set_md_mod_parameter(const char *na
  	return ret;
  }
  

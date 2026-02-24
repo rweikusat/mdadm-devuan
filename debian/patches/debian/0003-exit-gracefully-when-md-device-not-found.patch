@@ -1,10 +1,11 @@
 Author: Felix Lechner <felix.lechner@lease-up.com>
 Description: Exit gracefully when md device not found (Closes: #970329).
 
-diff -Naurp mdadm.orig/mdmonitor.c mdadm/mdmonitor.c
---- mdadm.orig/mdmonitor.c	2024-11-09 12:52:12.929661827 +0100
-+++ mdadm/mdmonitor.c	2024-11-09 12:54:35.666987182 +0100
-@@ -761,8 +761,14 @@ static int check_array(struct state *st,
+Index: mdadm-devuan/mdmonitor.c
+===================================================================
+--- mdadm-devuan.orig/mdmonitor.c
++++ mdadm-devuan/mdmonitor.c
+@@ -770,8 +770,14 @@ static int check_array(struct state *st,
  	if (fd < 0)
  		goto disappeared;
  

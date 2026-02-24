@@ -14,10 +14,11 @@ Description: Test installed files (Closes: #872118).
  Incorporates a suggestion from the fdisk maintainer to specify the fdisk
  prerequisite explicitly.
 
-diff -Naurp mdadm.orig/tests/func.sh mdadm/tests/func.sh
---- mdadm.orig/tests/func.sh
-+++ mdadm/tests/func.sh
-@@ -101,10 +101,6 @@ check_env() {
+Index: mdadm-devuan/tests/func.sh
+===================================================================
+--- mdadm-devuan.orig/tests/func.sh
++++ mdadm-devuan/tests/func.sh
+@@ -125,10 +125,6 @@ check_env() {
  		echo "test: testing can only be done as 'root'."
  		exit 1
  	}

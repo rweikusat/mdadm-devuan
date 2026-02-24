@@ -3,10 +3,11 @@ Description: Add host name to default MAILFROM (Closes: #1006464).
  The host on which the error occurred is mentioned in the subject and also in
  the message body, but some may find it useful in the From address, as well.
 
-diff -Naurp mdadm.orig/mdmonitor.c mdadm/mdmonitor.c
---- mdadm.orig/mdmonitor.c
-+++ mdadm/mdmonitor.c
-@@ -655,7 +655,7 @@ static void send_event_email(const struc
+Index: mdadm-devuan/mdmonitor.c
+===================================================================
+--- mdadm-devuan.orig/mdmonitor.c
++++ mdadm-devuan/mdmonitor.c
+@@ -664,7 +664,7 @@ static void send_event_email(const struc
  	if (info.mailfrom)
  		fprintf(mp, "From: %s\n", info.mailfrom);
  	else

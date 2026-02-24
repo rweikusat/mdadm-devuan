@@ -4,10 +4,11 @@ Description: Remove -Werror from compiler flags.
  update (introducing new warnings) could break the build. We'll let upstream
  use it to beautify the code, but remove it for out builds.
 
-diff -Naurp mdadm.orig/Makefile mdadm/Makefile
---- mdadm.orig/Makefile
-+++ mdadm/Makefile
-@@ -50,7 +50,7 @@ ifeq ($(origin CC),default)
+Index: mdadm-devuan/Makefile
+===================================================================
+--- mdadm-devuan.orig/Makefile
++++ mdadm-devuan/Makefile
+@@ -40,7 +40,7 @@ ifeq ($(origin CC),default)
  CC := $(CROSS_COMPILE)gcc
  endif
  CXFLAGS ?= -ggdb

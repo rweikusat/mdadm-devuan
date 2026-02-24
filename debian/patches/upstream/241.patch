@@ -18,11 +18,11 @@ Signed-off-by: Martin Wilck <mwilck@suse.com>
  super-ddf.c     |  2 +-
  4 files changed, 39 insertions(+), 2 deletions(-)
 
-diff --git a/config.c b/config.c
-index e6ede3bb..373acd48 100644
---- a/config.c
-+++ b/config.c
-@@ -83,7 +83,7 @@ char DefaultAltConfDir[] = CONFFILE2 ".d";
+Index: mdadm-devuan/config.c
+===================================================================
+--- mdadm-devuan.orig/config.c
++++ mdadm-devuan/config.c
+@@ -83,7 +83,7 @@ char DefaultAltConfDir[] = CONFFILE2 ".d
  
  enum linetype { Devices, Array, Mailaddr, Mailfrom, Program, CreateDev,
  		Homehost, HomeCluster, AutoMode, Policy, PartPolicy, Sysfs,
@@ -39,7 +39,7 @@ index e6ede3bb..373acd48 100644
  	[LTEnd]    = NULL
  };
  
-@@ -689,6 +690,19 @@ void encryption_no_verify_line(char *line)
+@@ -689,6 +690,19 @@ void encryption_no_verify_line(char *lin
  	}
  }
  
@@ -69,7 +69,7 @@ index e6ede3bb..373acd48 100644
  		default:
  			pr_err("Unknown keyword %s\n", line);
  		}
-@@ -1045,6 +1062,12 @@ bool conf_get_sata_opal_encryption_no_verify(void)
+@@ -1045,6 +1062,12 @@ bool conf_get_sata_opal_encryption_no_ve
  	return sata_opal_encryption_no_verify;
  }
  
@@ -82,10 +82,10 @@ index e6ede3bb..373acd48 100644
  struct createinfo *conf_get_create_info(void)
  {
  	load_conffile();
-diff --git a/mdadm.conf.5.in b/mdadm.conf.5.in
-index 44aff743..6cb265ad 100644
---- a/mdadm.conf.5.in
-+++ b/mdadm.conf.5.in
+Index: mdadm-devuan/mdadm.conf.5.in
+===================================================================
+--- mdadm-devuan.orig/mdadm.conf.5.in
++++ mdadm-devuan/mdadm.conf.5.in
 @@ -621,6 +621,19 @@ metadata.
  Available parameter
  .I "sata_opal".
@@ -106,11 +106,11 @@ index 44aff743..6cb265ad 100644
  
  .SH FILES
  
-diff --git a/mdadm.h b/mdadm.h
-index 40ada076..055d31e9 100644
---- a/mdadm.h
-+++ b/mdadm.h
-@@ -1639,6 +1639,7 @@ extern char *conf_get_homehost(int *require_homehostp);
+Index: mdadm-devuan/mdadm.h
+===================================================================
+--- mdadm-devuan.orig/mdadm.h
++++ mdadm-devuan/mdadm.h
+@@ -1636,6 +1636,7 @@ extern char *conf_get_homehost(int *requ
  extern char *conf_get_homecluster(void);
  extern int conf_get_monitor_delay(void);
  extern bool conf_get_sata_opal_encryption_no_verify(void);
@@ -118,11 +118,11 @@ index 40ada076..055d31e9 100644
  extern char *conf_line(FILE *file);
  extern char *conf_word(FILE *file, int allow_key);
  extern void print_quoted(char *str);
-diff --git a/super-ddf.c b/super-ddf.c
-index 657c53ab..85cc7a40 100644
---- a/super-ddf.c
-+++ b/super-ddf.c
-@@ -1006,7 +1006,7 @@ static int load_ddf_headers(int fd, struct ddf_super *super, char *devname)
+Index: mdadm-devuan/super-ddf.c
+===================================================================
+--- mdadm-devuan.orig/super-ddf.c
++++ mdadm-devuan/super-ddf.c
+@@ -1006,7 +1006,7 @@ static int load_ddf_headers(int fd, stru
  		}
  	}
  

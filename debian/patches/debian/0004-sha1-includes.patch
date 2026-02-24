@@ -13,9 +13,10 @@ Description: Do not #include ansidecl.h from sha1.h, use system headers.
  these contains definitive information about real system types than
  any guesses.
 
-diff -Naurp mdadm.orig/sha1.h mdadm/sha1.h
---- mdadm.orig/sha1.h
-+++ mdadm/sha1.h
+Index: mdadm-devuan/sha1.h
+===================================================================
+--- mdadm-devuan.orig/sha1.h
++++ mdadm-devuan/sha1.h
 @@ -22,7 +22,7 @@
  
  #include <stdio.h>
